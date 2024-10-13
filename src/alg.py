@@ -1,77 +1,81 @@
-import math
+import numpy as np
 
-def simplex(A, b, F):
-    # Приведение неравенств к равенствам
-    for i in range(len(A)):
-        for j in range(len(A)):
-            if j == i:
-                if b[i] > 0:
-                    A[i].append(1)
-                else: 
-                    A[i].append(-1)
-                    b[i] *= -1
-            else: 
-                A[i].append(0)
+def simplex(c, A, b):
+    """
+    Реализация симплекс-метода для задачи линейного программирования:
+    Максимизировать: c^T * x
+    При условиях: A * x <= b, x >= 0
     
-    # Добавление столбца b в матрицу A
-    for i in range(len(A)):
-        A[i].append(b[i])
-
-    # Преобразование целевой функции F
-    F = [-1 * f for f in F]
-    F += [0] * (len(A[0]) - len(F))  # Добавляем дополнительные нули
-    A.append(F)  # Добавляем целевую функцию в таблицу
-
-    while min(A[-1][:-1]) < 0:  # Пока есть отрицательные элементы в строке F
-        # Находим опорный столбец
-        pivot_col = A[-1][:-1].index(min(A[-1][:-1]))
-
-        # Формируем столбец для вычисления отношений
-        column = [A[i][pivot_col] for i in range(len(A) - 1)]
+    Аргументы:
+    c -- коэффициенты целевой функции (1D numpy array)
+    A -- матрица ограничений (2D numpy array)
+    b -- правая часть ограничений (1D numpy array)
+    
+    Возвращает:
+    x_opt -- оптимальные значения переменных
+    z_opt -- оптимальное значение целевой функции
+    status -- Статус (0: Оптимально, 1: Альтернативные решения)
+    """
+    
+    # Количество переменных и ограничений
+    m, n = A.shape
+    
+    # Создаем полную таблицу симплекс метода
+    tableau = np.zeros((m+1, n+m+1))
+    tableau[:-1, :-1] = np.hstack([A, np.eye(m)])
+    tableau[:-1, -1] = b
+    tableau[-1, :-1] = np.hstack([-c, np.zeros(m)])
+    
+    # Основной цикл симплекс метода
+    while not all(tableau[-1, :-1] >= 0):
+        # Шаг 1: Выбираем входящую переменную (по минимальному элементу в строке c)
+        pivot_col = np.argmin(tableau[-1, :-1])
         
-        # Проверка на то, что задача неограничена
-        if max(column) <= 0:
-            raise Exception('Задача неограничена')
-
-        # Вычисляем отношения (отношение свободного члена к элементам столбца)
-        ratios = [A[i][-1] / column[i] if column[i] > 0 else math.inf for i in range(len(column))]
-
-        if min(ratios) == math.inf:
-            raise Exception('Ошибка: Решения нет')
-
-        # Находим опорную строку
-        pivot_row = ratios.index(min(ratios))
-
-        # Опорный элемент
-        pivot = A[pivot_row][pivot_col]
-
-        # Обновление опорной строки (делим на опорный элемент)
-        A[pivot_row] = [x / pivot for x in A[pivot_row]]
-
-        # Обновление остальных строк
-        for i in range(len(A)):
+        # Шаг 2: Выбираем выходящую переменную (по минимальному отношению b[i] / A[i][pivot_col])
+        ratios = tableau[:-1, -1] / tableau[:-1, pivot_col]
+        positive_ratios = np.where(tableau[:-1, pivot_col] > 0, ratios, np.inf)
+        pivot_row = np.argmin(positive_ratios)
+        
+        if np.isinf(positive_ratios[pivot_row]):
+            raise ValueError("Задача не имеет решений.")
+        
+        # Шаг 3: Прямоугольный шаг (нормализуем ведущую строку)
+        tableau[pivot_row, :] /= tableau[pivot_row, pivot_col]
+        
+        # Шаг 4: Обновляем остальные строки
+        for i in range(m+1):
             if i != pivot_row:
-                factor = A[i][pivot_col]
-                A[i] = [A[i][j] - factor * A[pivot_row][j] for j in range(len(A[0]))]
-
-    # Оптимальное решение находится в последнем столбце
-    solution = [0] * (len(A[0]) - 1)
-    for i in range(len(A) - 1):
-        if 1 in A[i][:-1]:
-            col_idx = A[i].index(1)
-            if all(A[j][col_idx] == 0 for j in range(len(A)) if j != i):
-                solution[col_idx] = A[i][-1]
+                tableau[i, :] -= tableau[i, pivot_col] * tableau[pivot_row, :]
     
-    return solution, A[-1][-1]  # Возвращаем оптимальное решение и значение целевой функции
+    # Проверка на альтернативные решения
+    # Если есть неосновные переменные, которые могут улучшить значение целевой функции
+    alternative = (len(tableau[-1, :n]) - np.count_nonzero(tableau[-1, :n])) > n
+    
 
+    # Оптимальные переменные
+    x_opt = np.zeros(n)
+    for i in range(m):
+        basic_var_index = np.where(tableau[i, :n] == 1)[0]
+        if len(basic_var_index) == 1:
+            x_opt[basic_var_index[0]] = tableau[i, -1]
+    
+    z_opt = tableau[-1, -1]
+    
+    # Статус решения (0 - оптимум, 1 - альтернативные решения)
+    status = 1 if alternative else 0
+    
+    return x_opt, z_opt, status
 
+# Пример использования
+c = np.array([3, 2])  # Коэффициенты целевой функции
+A = np.array([[1, 2], [2, 1], [1, 0]])  # Ограничения
+b = np.array([4, 5, 3])  # Правая часть ограничений
 
+x_opt, z_opt, status = simplex(c, A, b)
 
-# A коэффиценты при неравенствах
-# b свободные члены
-# F целевая функция
-
-A = [[1,2],[2,123]]
-b = [1,1]
-F  = [1,15]
-print(simplex(A,b,F))
+print("Оптимальные значения переменных:", x_opt)
+print("Оптимальное значение целевой функции:", z_opt)
+if status == 1:
+    print("Существуют альтернативные оптимальные решения.")
+else:
+    print("Альтернативных решений нет.")
