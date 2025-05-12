@@ -1,5 +1,4 @@
 import pytest
-import numpy as np
 from scipy.optimize import linprog
 from simplex import simplex
 
