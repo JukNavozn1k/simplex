@@ -13,43 +13,46 @@ def simplex(tableau, basis):
         last_row = tableau[-1]
         negative_cols = [i for i, val in enumerate(last_row[:-1]) if val < -epsilon]
         
-        # В цикле выбора pivot_col:
         if not negative_cols:
-            # Проверяем, есть ли отрицательные правые части в ограничениях
-            infeasible = any(tableau[i][-1] < -epsilon for i in range(m))
-            if infeasible:
-                return {{
-                'status': 'infeasible',
-                'message': 'Задача неограниченна',
-                'tableau': copy_tableau(),
-                'tableau_history': tableau_history}}
-            else:
-                break  # Оптимальное решение
+            # Проверка на недопустимость после завершения цикла
+            if any(tableau[i][-1] < -epsilon for i in range(m)):
+                return {
+                    'status': 'infeasible',
+                    'message': 'Нет допустимых решений',
+                    'tableau': copy_tableau(),
+                    'tableau_history': tableau_history
+                }
+            break
             
         pivot_col = max(negative_cols, key=lambda i: abs(last_row[i]))
         
-        positive_vals = []
         valid_rows = []
         for i in range(m):
             a = tableau[i][pivot_col]
             b = tableau[i][-1]
-            if a > epsilon and b >= -epsilon:  # Проверяем b >= 0
-                positive_vals.append(a)
+            if a > epsilon and b >= -epsilon:
                 valid_rows.append(i)
-            else:
-                positive_vals.append(0)
         
-        if all(val <= 0 for val in positive_vals):
-            return {
-                'status': 'unbounded',
-                'message': 'Задача неограниченна',
-                'tableau': copy_tableau(),
-                'tableau_history': tableau_history
-            }
+        # Если нет допустимых строк, проверяем на недопустимость
+        if not valid_rows:
+            if any(tableau[i][-1] < -epsilon for i in range(m)):
+                return {
+                    'status': 'infeasible',
+                    'message': 'Нет допустимых решений',
+                    'tableau': copy_tableau(),
+                    'tableau_history': tableau_history
+                }
+            else:
+                return {
+                    'status': 'unbounded',
+                    'message': 'Задача неограниченна',
+                    'tableau': copy_tableau(),
+                    'tableau_history': tableau_history
+                }
         
         min_ratio = float('inf')
         pivot_row = -1
-        for i in valid_rows:  # Только строки с a > 0 и b >= 0
+        for i in valid_rows:
             a = tableau[i][pivot_col]
             b = tableau[i][-1]
             ratio = b / a
@@ -58,13 +61,22 @@ def simplex(tableau, basis):
                 min_ratio = ratio
                 pivot_row = i
         
+        # Если pivot_row не найден, проверяем на недопустимость
         if pivot_row == -1:
-            return {
-                'status': 'infeasible',
-                'message': 'Нет допустимых решений',
-                'tableau': copy_tableau(),
-                'tableau_history': tableau_history
-            }
+            if any(tableau[i][-1] < -epsilon for i in range(m)):
+                return {
+                    'status': 'infeasible',
+                    'message': 'Нет допустимых решений',
+                    'tableau': copy_tableau(),
+                    'tableau_history': tableau_history
+                }
+            else:
+                return {
+                    'status': 'unbounded',
+                    'message': 'Задача неограниченна',
+                    'tableau': copy_tableau(),
+                    'tableau_history': tableau_history
+                }
         
         basis[pivot_row] = pivot_col
         
@@ -88,8 +100,7 @@ def simplex(tableau, basis):
         col = basis[i]
         solution[col] = tableau[i][-1]
     
-    
-    opt_value = tableau[-1][-1]  # Убираем минус
+    opt_value = tableau[-1][-1]
     
     return {
         'status': 'optimal',

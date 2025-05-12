@@ -79,7 +79,6 @@ def test_simplex_vs_scipy_unbounded():
     
     scipy_result = linprog(c=c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
     assert scipy_result.status == 3  # SciPy статус 'unbounded'
-
 def test_simplex_vs_scipy_infeasible():
     """
     Тест на недопустимость. Пример:
@@ -87,17 +86,15 @@ def test_simplex_vs_scipy_infeasible():
         При условиях:
             x <= -1
             x >= 0
-        Ожидаемый результат: нет допустимых решений.
     """
-    # Данные для нашей реализации
+    # Корректные данные
     tableau = [
         [1, 1, -1],  # x + s = -1 (s >= 0)
-        [0, 1, 0, 5], # Другое ограничение для заполнения (не используется)
-        [-1, 0, 0]    # Целевая: -x
+        [-1, 0, 0]    # Целевая: -x (максимизация)
     ]
-    basis = [1, 2]  # Slack переменные
+    basis = [1]  # Slack переменная s
     
-    our_result = simplex(tableau, basis)
+    our_result = simplex([row.copy() for row in tableau], basis.copy())
     assert our_result['status'] == 'infeasible'
     
     # Проверка через SciPy
@@ -107,4 +104,4 @@ def test_simplex_vs_scipy_infeasible():
     bounds = [(0, None)]  # x >= 0
     
     scipy_result = linprog(c=c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
-    assert scipy_result.status == 2  # SciPy статус 'infeasible'
+    assert scipy_result.status == 2  # 'infeasible'
