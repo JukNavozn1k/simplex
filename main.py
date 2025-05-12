@@ -74,9 +74,25 @@ def main():
             st.subheader("История итераций")
             for i, tab in enumerate(result['tableau_history']):
                 with st.expander(f"Итерация {i}"):
-                    # Format numbers to 4 decimal places without numpy
+                    # Create headers for variables and slack variables
+                    headers = [f"x{j+1}" for j in range(n_vars)]
+                    headers.append("b")  # Add RHS column header
+                    
+                    # Create row indices
+                    index = [f"Огр. {i+1}" for i in range(n_constraints)]
+                    index.append("Z")  # Add objective function row label
+                    
+                    # Format data with labels
                     formatted_tab = [[f"{x:.4f}" for x in row] for row in tab]
-                    st.table(formatted_tab)
+                    
+                    # Create a dictionary for the table with labels
+                    table_data = {
+                        "": index,  # Empty string for index column header
+                        **{headers[j]: [row[j] for row in formatted_tab] 
+                           for j in range(len(headers))}
+                    }
+                    
+                    st.dataframe(table_data)
         else:
             st.error(result['message'])
 
