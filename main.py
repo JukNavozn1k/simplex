@@ -8,9 +8,9 @@ def main():
     # Input dimensions
     col1, col2 = st.columns(2)
     with col1:
-        n_vars = st.number_input("Количество переменных", min_value=1, value=2)
+        n_vars = st.number_input("Количество переменных", min_value=1, max_value=8, value=3)
     with col2:
-        n_constraints = st.number_input("Количество ограничений", min_value=1, value=2)
+        n_constraints = st.number_input("Количество ограничений", min_value=1, max_value=6, value=2)
     
     # Input for objective function
     st.subheader("Целевая функция (максимизация)")
