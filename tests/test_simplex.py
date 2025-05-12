@@ -105,3 +105,73 @@ def test_simplex_vs_scipy_infeasible():
     
     scipy_result = linprog(c=c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
     assert scipy_result.status == 2  # 'infeasible'
+
+
+def test_simplex_multiple_solutions():
+    """
+    Тест на наличие бесконечного числа решений.
+    Пример:
+        Максимизировать: x1 + x2
+        При условиях:
+            x1 + x2 <= 2
+            x1, x2 >= 0
+    Ожидается флаг multiple_solutions=True.
+    """
+    tableau = [
+        [1, 1, 1, 2],   # x1 + x2 + s1 = 2
+        [-1, -1, 0, 0]   # Целевая: -x1 -x2 (максимизация)
+    ]
+    basis = [2]  # Slack переменная s1
+    
+    result = simplex([row.copy() for row in tableau], basis.copy())
+    
+    assert result['status'] == 'optimal'
+    assert result['multiple_solutions'] == True
+    assert result['optimal_value'] == pytest.approx(2.0)
+
+def test_simplex_degenerate():
+    """
+    Тест на вырожденную задачу.
+    Пример:
+        Максимизировать: x1
+        При условиях:
+            x1 <= 1
+            x1 <= 1
+            x1 >= 0
+    Ожидается решение x1=1.
+    """
+    tableau = [
+        [1, 1, 0, 1],   # x1 + s1 = 1
+        [1, 0, 1, 1],   # x1 + s2 = 1
+        [-1, 0, 0, 0]    # Целевая: -x1
+    ]
+    basis = [1, 2]  # Slack переменные s1, s2
+    
+    result = simplex([row.copy() for row in tableau], basis.copy())
+    
+    assert result['status'] == 'optimal'
+    assert result['solution'][0] == pytest.approx(1.0)
+    assert result['optimal_value'] == pytest.approx(1.0)
+def test_simplex_already_optimal():
+    """
+    Тест на случай, когда начальное решение уже оптимально.
+    Пример:
+        Минимизировать: 2x1 + x2
+        При условиях:
+            x1 <= 5
+            x2 <= 3
+            x1, x2 >= 0
+    Начальный базис (s1, s2) уже оптимален.
+    """
+    tableau = [
+        [1, 0, 1, 0, 5],  # x1 + s1 = 5
+        [0, 1, 0, 1, 3],  # x2 + s2 = 3
+        [2, 1, 0, 0, 0]   # Целевая: 2x1 + x2 (минимизация)
+    ]
+    basis = [2, 3]  # Slack переменные s1, s2
+    
+    result = simplex([row.copy() for row in tableau], basis.copy())
+    
+    assert result['status'] == 'optimal'
+    assert result['solution'][:2] == pytest.approx([0.0, 0.0])
+    assert result['optimal_value'] == pytest.approx(0.0)
