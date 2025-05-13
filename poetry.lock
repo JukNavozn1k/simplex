@@ -719,6 +719,22 @@ files = [
 ]
 
 [[package]]
+name = "pulp"
+version = "3.1.1"
+description = "PuLP is an LP modeler written in python. PuLP can generate MPS or LP files and call GLPK, COIN CLP/CBC, CPLEX, and GUROBI to solve linear problems."
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "pulp-3.1.1-py3-none-any.whl", hash = "sha256:ad9d46afaf78a708270a2fa9b38e56536584c048dfbd7a6dbc719abee1051261"},
+    {file = "pulp-3.1.1.tar.gz", hash = "sha256:300a330e917c9ca9ac7fda6f5849bbf30d489c368117f197a3e3fd0bc1966d95"},
+]
+
+[package.extras]
+open-py = ["cylp", "highspy", "pyscipopt"]
+public-py = ["coptpy", "gurobipy", "xpress"]
+
+[[package]]
 name = "pyarrow"
 version = "20.0.0"
 description = "Python library for Apache Arrow"
@@ -1278,4 +1294,4 @@ watchmedo = ["PyYAML (>=3.10)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "635d7f2e2cfa7995f1241534b78c241d33897dd3a59182ac4e3324fda2dd57b3"
+content-hash = "eb77b139f2353329d334cf9f17edcd2ccfb5b433a1e8cd42ad57685eeae332fc"
