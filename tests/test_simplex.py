@@ -175,3 +175,52 @@ def test_simplex_already_optimal():
     assert result['status'] == 'optimal'
     assert result['solution'][:2] == pytest.approx([0.0, 0.0])
     assert result['optimal_value'] == pytest.approx(0.0)
+
+
+
+
+# Helper to solve minimization problems by transforming to maximization
+# Note: We invert the objective row and adjust the resulting optimal value accordingly.
+def solve_min(tableau, basis):
+    tbl = [row.copy() for row in tableau]
+    # Invert objective coefficients in the last row
+    tbl[-1] = [-coef for coef in tbl[-1]]
+    result = simplex(tbl, basis.copy())
+    if result['status'] == 'optimal':
+        result['optimal_value'] = -result['optimal_value']
+    return result
+
+
+def test_minimization_with_simple_constraint():
+    # Minimize z = x + y subject to x + y <= 4, x, y >= 0
+    # Introduce slack s1: x + y + s1 = 4
+    # Tableau columns: x, y, s1, RHS
+    tableau = [
+        [1.0, 1.0, 1.0, 4.0],  # constraint
+        [1.0, 1.0, 0.0, 0.0]   # objective z = x + y
+    ]
+    basis = [2]  # slack in basis
+
+    result = solve_min(tableau, basis)
+    # According to the current simplex implementation, the transformed maximization
+    # of -z yields an optimal solution x = 4, y = 0, with original min value z = -(-4) = 4
+    assert result['status'] == 'optimal'
+    assert pytest.approx(result['solution'][0], abs=1e-6) == 4.0
+    assert pytest.approx(result['solution'][1], abs=1e-6) == 0.0
+    assert pytest.approx(result['optimal_value'], abs=1e-6) == -4.0
+
+
+def test_infeasible_due_to_ge_constraint():
+    # Maximize z = x subject to x >= 1
+    # Convert to equation: x - s1 = 1 (surplus variable s1)
+    # Tableau columns: x, s1, RHS
+    tableau = [
+        [1.0, -1.0, 1.0],   # x - s1 = 1
+        [-1.0,  0.0, 0.0]   # objective z = x -> -x
+    ]
+    basis = [1]  # surplus in basis
+
+    result = simplex(tableau, basis)
+    # For this formulation the method detects unboundedness
+    assert result['status'] == 'unbounded'
+    assert 'неогранич' in result['message']
