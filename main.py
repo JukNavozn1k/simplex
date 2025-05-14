@@ -34,6 +34,10 @@ def show_instructions():
 
 def main():
     # st.set_page_config(layout="wide")
+    st.set_page_config(
+    page_title="Симплекс калькулятор",
+    page_icon="🧮",  # Эмодзи калькулятора
+)
     
     tabs = st.tabs(["Калькулятор", "Инструкция"])
     
