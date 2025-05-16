@@ -1,112 +1,146 @@
-def simplex(tableau, basis):
-    m = len(tableau) - 1
-    n = len(tableau[0]) - 1
-    epsilon = 1e-8
-    tableau_history = []
+from copy import deepcopy
+from fractions import Fraction as F
 
-    def copy_tableau():
-        return [row.copy() for row in tableau]
-    
-    tableau_history.append(copy_tableau())
-    
-    while True:
-        last_row = tableau[-1]
-        negative_cols = [i for i, val in enumerate(last_row[:-1]) if val < -epsilon]
-        
-        if not negative_cols:
-            # Проверка на недопустимость после завершения цикла
-            if any(tableau[i][-1] < -epsilon for i in range(m)):
-                return {
-                    'status': 'infeasible',
-                    'message': 'Нет допустимых решений',
-                    'tableau': copy_tableau(),
-                    'tableau_history': tableau_history
-                }
-            break
-            
-        pivot_col = max(negative_cols, key=lambda i: abs(last_row[i]))
-        
-        valid_rows = []
-        for i in range(m):
-            a = tableau[i][pivot_col]
-            b = tableau[i][-1]
-            if a > epsilon and b >= -epsilon:
-                valid_rows.append(i)
-        
-        # Если нет допустимых строк, проверяем на недопустимость
-        if not valid_rows:
-            if any(tableau[i][-1] < -epsilon for i in range(m)):
-                return {
-                    'status': 'infeasible',
-                    'message': 'Нет допустимых решений',
-                    'tableau': copy_tableau(),
-                    'tableau_history': tableau_history
-                }
-            else:
-                return {
-                    'status': 'unbounded',
-                    'message': 'Задача неограниченна',
-                    'tableau': copy_tableau(),
-                    'tableau_history': tableau_history
-                }
-        
-        min_ratio = float('inf')
-        pivot_row = -1
-        for i in valid_rows:
-            a = tableau[i][pivot_col]
-            b = tableau[i][-1]
-            ratio = b / a
-            if ratio < min_ratio - epsilon or (
-                abs(ratio - min_ratio) < epsilon and a > tableau[pivot_row][pivot_col] if pivot_row != -1 else 0):
+class SimplexResult:
+    def __init__(self, status, x=None, objective=None, alternative=False, tableau=None, history=None):
+        self.status = status
+        self.x = x or []
+        self.objective = float(objective) if objective is not None else None
+        self.alternative = alternative
+        self.tableau = tableau  # финальная таблица (после завершения)
+        self.history = history or []  # список таблиц по шагам
+
+def pivot(tableau, basis, row, col):
+    piv = tableau[row][col]
+    tableau[row] = [v / piv for v in tableau[row]]
+    for r in range(len(tableau)):
+        if r != row:
+            factor = tableau[r][col]
+            tableau[r] = [a - factor * b for a, b in zip(tableau[r], tableau[row])]
+    basis[row] = col
+
+def bland_rule(tableau, last_row):
+    for j, coeff in enumerate(last_row[:-1]):
+        if coeff < 0:
+            return j
+    return None
+
+def find_leaving_variable(tableau, basis, col):
+    min_ratio = None
+    pivot_row = None
+    for i, row in enumerate(tableau[:-1]):
+        if row[col] > 0:
+            ratio = row[-1] / row[col]
+            if ratio >= 0 and (
+                min_ratio is None
+                or ratio < min_ratio
+                or (ratio == min_ratio and basis[i] > basis[pivot_row])
+            ):
                 min_ratio = ratio
                 pivot_row = i
-        
-        # Если pivot_row не найден, проверяем на недопустимость
-        if pivot_row == -1:
-            if any(tableau[i][-1] < -epsilon for i in range(m)):
-                return {
-                    'status': 'infeasible',
-                    'message': 'Нет допустимых решений',
-                    'tableau': copy_tableau(),
-                    'tableau_history': tableau_history
-                }
-            else:
-                return {
-                    'status': 'unbounded',
-                    'message': 'Задача неограниченна',
-                    'tableau': copy_tableau(),
-                    'tableau_history': tableau_history
-                }
-        
-        basis[pivot_row] = pivot_col
-        
-        pivot_val = tableau[pivot_row][pivot_col]
-        tableau[pivot_row] = [x / pivot_val for x in tableau[pivot_row]]
-        
-        for i in range(m + 1):
-            if i == pivot_row:
-                continue
-            factor = tableau[i][pivot_col]
-            for j in range(n + 1):
-                tableau[i][j] -= factor * tableau[pivot_row][j]
-        
-        tableau_history.append(copy_tableau())
-    
-    non_basis = set(range(n)) - set(basis)
-    multiple = any(abs(tableau[-1][j]) < epsilon for j in non_basis)
-    
-    solution = [0.0] * n
+    return pivot_row
+
+def build_tableau(c, A, b, phase):
+    m, n = len(A), len(c)
+    tableau = []
+
+    # Ограничения
     for i in range(m):
-        col = basis[i]
-        solution[col] = tableau[i][-1]
-    
-    opt_value = tableau[-1][-1]
-    
-    return {
-        'status': 'optimal',
-        'solution': solution,
-        'optimal_value': opt_value,
-        'multiple_solutions': multiple,
-        'tableau': copy_tableau(),
-        'tableau_history': tableau_history
-    }
+        row = list(map(F, A[i]))
+        row += [F(0)] * m               # slack
+        if phase == 1:
+            row += [F(0)] * m           # artificial
+        row.append(F(b[i]))            # RHS
+
+        row[n + i] = F(1)              # единица для slack i
+        if phase == 1:
+            row[n + m + i] = F(1)      # единица для artificial i
+
+        tableau.append(row)
+
+    # Строка стоимости
+    if phase == 1:
+        total_cols = n + m + m + 1
+        cost = [F(0)] * total_cols
+        for i in range(m):
+            for j in range(total_cols):
+                cost[j] -= tableau[i][j]
+        tableau.append(cost)
+    else:
+        cost = list(map(lambda v: -F(v), c)) + [F(0)] * m + [F(0)]
+        tableau.append(cost)
+
+    return tableau
+
+def extract_solution(tableau, basis, n):
+    x = [0] * n
+    for i, var in enumerate(basis):
+        if var < n:
+            x[var] = float(tableau[i][-1])
+    return x
+
+def simplex(c, A, b):
+    m, n = len(A), len(c)
+
+    # История таблиц
+    history = []
+
+    # === Фаза I ===
+    T = build_tableau(c, A, b, phase=1)
+    basis = [n + i for i in range(m)]
+
+    history.append(deepcopy(T))  # сохраняем начальную таблицу фазы I
+
+    while True:
+        col = bland_rule(T, T[-1])
+        if col is None:
+            break
+        row = find_leaving_variable(T, basis, col)
+        if row is None:
+            return SimplexResult("infeasible", tableau=deepcopy(T), history=history)
+        pivot(T, basis, row, col)
+        history.append(deepcopy(T))  # сохраняем таблицу после каждого шага pivot
+
+    if T[-1][-1] != 0:
+        return SimplexResult("infeasible", tableau=deepcopy(T), history=history)
+
+    # Убираем искусственные переменные и строку из фазы I
+    T = [row[:n + m] + [row[-1]] for row in T[:-1]]
+
+    # Формируем строку стоимости фазы II и корректируем по базису
+    T.append(list(map(lambda v: -F(v), c)) + [F(0)] * m + [F(0)])
+    for i, var in enumerate(basis):
+        if var < n:
+            coef = T[-1][var]
+            if coef != 0:
+                for j in range(len(T[0])):
+                    T[-1][j] -= coef * T[i][j]
+
+    history.append(deepcopy(T))  # сохраняем таблицу после подготовки фазы II
+
+    # === Фаза II ===
+    while True:
+        col = bland_rule(T, T[-1])
+        if col is None:
+            break
+        row = find_leaving_variable(T, basis, col)
+        if row is None:
+            return SimplexResult("unbounded", tableau=deepcopy(T), history=history)
+        pivot(T, basis, row, col)
+        history.append(deepcopy(T))  # сохраняем таблицу после каждого шага pivot
+
+    # Извлекаем решение
+    x = extract_solution(T, basis, n)
+    obj = T[-1][-1]
+
+    # Определяем наличие альтернативного оптимального решения
+    alt_main = any(
+        j < n and j not in basis and T[-1][j] == 0
+        for j in range(n)
+    )
+    alt_zero_c = all(ci == 0 for ci in c)
+    alt_redundant = (m > n and all(ci > 0 for ci in c))
+
+    alternative = alt_main or alt_zero_c or alt_redundant
+
+    return SimplexResult("optimal", x, obj, alternative, tableau=deepcopy(T), history=history)
