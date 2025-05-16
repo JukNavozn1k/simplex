@@ -1,4 +1,1 @@
-from .base import simplex
-
-
-__all__ = ['simplex']
+from .base import simplex, SimplexResult
