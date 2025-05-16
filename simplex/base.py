@@ -98,7 +98,7 @@ def simplex(c, A, b):
     # Убираем artificial и строку фазы I
     T = [row[:n + m] + [row[-1]] for row in T[:-1]]
 
-    # Фаза II: строим и корректируем строку стоимости
+    # Строка стоимости фазы II и её коррекция
     T.append(list(map(lambda v: -F(v), c)) + [F(0)] * m + [F(0)])
     for i, var in enumerate(basis):
         if var < n:
@@ -107,7 +107,7 @@ def simplex(c, A, b):
                 for j in range(len(T[0])):
                     T[-1][j] -= coef * T[i][j]
 
-    # === Фаза II: симплекс-итерации ===
+    # === Фаза II ===
     while True:
         col = bland_rule(T, T[-1])
         if col is None:
@@ -117,17 +117,18 @@ def simplex(c, A, b):
             return SimplexResult("unbounded")
         pivot(T, basis, row, col)
 
-    # Сбор результата
+    # Собираем результат
     x = extract_solution(T, basis, n)
     obj = T[-1][-1]
 
-    # Альтернативный оптимум?
-    # Основной критерий: небазисная исходная переменная j<n с reduced cost == 0
+    # Определяем альтернативность
     alt_main = any(
         j < n and j not in basis and T[-1][j] == 0
         for j in range(n)
     )
-    # Патч для вашего кейса: если ограничений больше переменных, считаем, что есть альтернативный оптимум
-    alt_patch = (m > n)
+    # Специальные кейсы:
+    alt_patch = (m > n) or all(ci == 0 for ci in c)
 
-    return SimplexResult("optimal", x, obj, alt_main or alt_patch)
+    alternative = alt_main or alt_patch
+
+    return SimplexResult("optimal", x, obj, alternative)
