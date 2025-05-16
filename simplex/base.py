@@ -2,11 +2,13 @@ from copy import deepcopy
 from fractions import Fraction as F
 
 class SimplexResult:
-    def __init__(self, status, x=None, objective=None, alternative=False):
+    def __init__(self, status, x=None, objective=None, alternative=False, tableau=None, history=None):
         self.status = status
         self.x = x or []
         self.objective = float(objective) if objective is not None else None
         self.alternative = alternative
+        self.tableau = tableau  # финальная таблица (после завершения)
+        self.history = history or []  # список таблиц по шагам
 
 def pivot(tableau, basis, row, col):
     piv = tableau[row][col]
@@ -80,20 +82,27 @@ def extract_solution(tableau, basis, n):
 def simplex(c, A, b):
     m, n = len(A), len(c)
 
+    # История таблиц
+    history = []
+
     # === Фаза I ===
     T = build_tableau(c, A, b, phase=1)
     basis = [n + i for i in range(m)]
+
+    history.append(deepcopy(T))  # сохраняем начальную таблицу фазы I
+
     while True:
         col = bland_rule(T, T[-1])
         if col is None:
             break
         row = find_leaving_variable(T, basis, col)
         if row is None:
-            return SimplexResult("infeasible")
+            return SimplexResult("infeasible", tableau=deepcopy(T), history=history)
         pivot(T, basis, row, col)
+        history.append(deepcopy(T))  # сохраняем таблицу после каждого шага pivot
 
     if T[-1][-1] != 0:
-        return SimplexResult("infeasible")
+        return SimplexResult("infeasible", tableau=deepcopy(T), history=history)
 
     # Убираем искусственные переменные и строку из фазы I
     T = [row[:n + m] + [row[-1]] for row in T[:-1]]
@@ -107,6 +116,8 @@ def simplex(c, A, b):
                 for j in range(len(T[0])):
                     T[-1][j] -= coef * T[i][j]
 
+    history.append(deepcopy(T))  # сохраняем таблицу после подготовки фазы II
+
     # === Фаза II ===
     while True:
         col = bland_rule(T, T[-1])
@@ -114,8 +125,9 @@ def simplex(c, A, b):
             break
         row = find_leaving_variable(T, basis, col)
         if row is None:
-            return SimplexResult("unbounded")
+            return SimplexResult("unbounded", tableau=deepcopy(T), history=history)
         pivot(T, basis, row, col)
+        history.append(deepcopy(T))  # сохраняем таблицу после каждого шага pivot
 
     # Извлекаем решение
     x = extract_solution(T, basis, n)
@@ -131,4 +143,4 @@ def simplex(c, A, b):
 
     alternative = alt_main or alt_zero_c or alt_redundant
 
-    return SimplexResult("optimal", x, obj, alternative)
+    return SimplexResult("optimal", x, obj, alternative, tableau=deepcopy(T), history=history)
