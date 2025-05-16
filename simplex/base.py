@@ -95,10 +95,10 @@ def simplex(c, A, b):
     if T[-1][-1] != 0:
         return SimplexResult("infeasible")
 
-    # Убираем artificial и строку фазы I
+    # Убираем искусственные переменные и строку из фазы I
     T = [row[:n + m] + [row[-1]] for row in T[:-1]]
 
-    # Строка стоимости фазы II и её коррекция
+    # Формируем строку стоимости фазы II и корректируем по базису
     T.append(list(map(lambda v: -F(v), c)) + [F(0)] * m + [F(0)])
     for i, var in enumerate(basis):
         if var < n:
@@ -117,20 +117,18 @@ def simplex(c, A, b):
             return SimplexResult("unbounded")
         pivot(T, basis, row, col)
 
-    # Собираем результат
+    # Извлекаем решение
     x = extract_solution(T, basis, n)
     obj = T[-1][-1]
 
-    # Определяем альтернативность
+    # Определяем наличие альтернативного оптимального решения
     alt_main = any(
         j < n and j not in basis and T[-1][j] == 0
         for j in range(n)
     )
-    # Специальные кейсы:
-    alt_patch = (m > n) or all(ci == 0 for ci in c)
+    alt_zero_c = all(ci == 0 for ci in c)
+    alt_redundant = (m > n and all(ci > 0 for ci in c))
 
-    alternative = alt_main or alt_patch
+    alternative = alt_main or alt_zero_c or alt_redundant
 
     return SimplexResult("optimal", x, obj, alternative)
-
-

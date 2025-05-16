@@ -204,33 +204,33 @@ def test_special_simplex_cases(case):
         assert res.alternative == case.get('alternative', False)
 
 
-# def test_cycling_case():
-#     """
-#     Классический cycling–пример:
-#       max z = x1
-#       s.t.  x1 - 2 x2 <= 0
-#            -x1 + x2 <= 0
-#              x2 <= 1
-#             x1,x2 >= 0
+def test_cycling_case():
+    """
+    Классический cycling–пример:
+      max z = x1
+      s.t.  x1 - 2 x2 <= 0
+           -x1 + x2 <= 0
+             x2 <= 1
+            x1,x2 >= 0
 
-#     Если бы мы брали простое правило выбора (например, наибольший коэффициент),
-#     симплекс мог бы зациклиться. С правилом Бланда — сходится:
-#       оптимум: x2 = 1, x1 = 2, z = 2
-#     """
-#     c = [1, 0]
-#     A = [
-#         [ 1, -2],
-#         [-1,  1],
-#         [ 0,  1],
-#     ]
-#     b = [0, 0, 1]
+    Если бы мы брали простое правило выбора (например, наибольший коэффициент),
+    симплекс мог бы зациклиться. С правилом Бланда — сходится:
+      оптимум: x2 = 1, x1 = 2, z = 2
+    """
+    c = [1, 0]
+    A = [
+        [ 1, -2],
+        [-1,  1],
+        [ 0,  1],
+    ]
+    b = [0, 0, 1]
 
-#     res = simplex(c, A, b)
-#     # Должны дойти до оптимума, а не зациклиться
-#     assert res.status == 'optimal'
-#     assert pytest.approx(res.objective, rel=1e-6) == 2.0
-#     # Проверяем, что нашли (x1, x2) ≈ (2, 1)
-#     assert all(pytest.approx(xi, rel=1e-6) == exp
-#                for xi, exp in zip(res.x, [2.0, 1.0]))
-#     # Это единственный оптимум
-#     assert not res.alternative
+    res = simplex(c, A, b)
+    # Должны дойти до оптимума, а не зациклиться
+    assert res.status == 'optimal'
+    assert pytest.approx(res.objective, rel=1e-6) == 2.0
+    # Проверяем, что нашли (x1, x2) ≈ (2, 1)
+    assert all(pytest.approx(xi, rel=1e-6) == exp
+               for xi, exp in zip(res.x, [2.0, 1.0]))
+    # Это единственный оптимум
+    assert not res.alternative
