@@ -132,3 +132,5 @@ def simplex(c, A, b):
     alternative = alt_main or alt_patch
 
     return SimplexResult("optimal", x, obj, alternative)
+
+
