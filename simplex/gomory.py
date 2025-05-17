@@ -1,115 +1,69 @@
-# from copy import deepcopy
-# from fractions import Fraction as F
-# from .base import simplex, SimplexResult
+from copy import deepcopy
+from fractions import Fraction as F
 
-# def gomory_integer(c, A, b, senses=None, max_cuts=100):
-#     """
-#     Решение целочисленной задачи методом Гомори.
+from .base import simplex,SimplexResult
 
-#     Параметры:
-#         c: коэффициенты целевой функции (макс. задача)
-#         A: матрица ограничений
-#         b: вектор правых частей
-#         senses: список знаков ограничений (<=, >=, ==)
-#         max_cuts: макс. число рассечений
+# --- (existing Simplex implementation as before) ---
+# assume pivot, bland_rule, find_leaving_variable, build_tableau,
+# extract_solution, simplex, SimplexResult are defined above
 
-#     Возвращает:
-#         SimplexResult со status 'optimal_integer', 'infeasible' или 'max_cuts_exceeded'
-#     """
-#     n = len(c)
-#     if senses is None:
-#         senses = ['<='] * len(A)
-#     history = []
 
-#     # В текущей реализации senses не используется для преобразования ограничений,
-#     # это нужно добавить при необходимости.
+def gomory_integer(c, A, b, senses=None, max_cuts=10):
+    """
+    Метод Гомори для получения целочисленных решений.
+    c:        список коэффициентов целевой
+    A, b:     матрица и вектор ограничений
+    senses:   список того же размера, что b, со знаками '<=', '>=', '=='
+    max_cuts: макс. число добавленных разрезов
+    """
+    # по умолчанию — все <=
+    if senses is None:
+        senses = ['<='] * len(b)
 
-#     # 1) Пытаемся выкинуть дробные решения рассечениями Гомори
-#     for cut_iter in range(max_cuts):
-#         result = simplex(c, A, b, senses)
-#         history.extend(result.history)
+    # 1) решаем непрерывную релаксацию
+    res = simplex(c, A, b, senses)
+    if res.status != 'optimal':
+        return res
 
-#         if result.status != 'optimal':
-#             # LP нерешаем или не оптимален
-#             return SimplexResult(
-#                 result.status,
-#                 x=[int(v) if float(v).is_integer() else v for v in (result.x or [])],
-#                 objective=result.objective,
-#                 alternative=result.alternative,
-#                 tableau=result.tableau,
-#                 history=history
-#             )
+    cuts = 0
+    # 2) пока есть нецелая переменная и не исчерпаны разрезы
+    while cuts < max_cuts:
+        # находим первую базисную строку с дробным RHS
+        # res.tableau — финальная фаза II
+        T = res.tableau
+        m = len(T)-1
+        # ищем i: RHS = T[i][-1] дробное
+        row_idx = next((i for i in range(m)
+                        if F(T[i][-1]).denominator != 1), None)
+        if row_idx is None:
+            # все целые!
+            return SimplexResult('optimal', res.x, res.objective, tableau=res.tableau, history=res.history)
 
-#         # Проверяем, целые ли x
-#         x = result.x
-#         fracs = [F(xi).limit_denominator() - F(int(xi)) for xi in x]
-#         frac_rows = [(i, frac) for i, frac in enumerate(fracs) if frac != 0]
-#         if not frac_rows:
-#             # Все целые — нашли оптимум
-#             int_x = [int(round(xi)) for xi in x]
-#             return SimplexResult(
-#                 'optimal_integer',
-#                 x=int_x,
-#                 objective=result.objective,
-#                 alternative=result.alternative,
-#                 tableau=result.tableau,
-#                 history=history
-#             )
+        # формируем разрез Гомори: сумма дробных частей row_ij * x_j >= frac_part(b_i)
+        # но переписываем в форме <=:
+        row = T[row_idx]
+        frac_rhs = F(row[-1]) - F(int(row[-1]))
+        # коэффициенты нового ограничения
+        new_A = []
+        for aij in row[:-1]:
+            frac_a = F(aij) - F(int(aij))
+            new_A.append(frac_a)
+        # добавляем строку ∑ frac(aij) x_j  <= frac(rhs)
+        A.append([float(f) for f in new_A])
+        b.append(float(frac_rhs))
+        senses.append('<=')  # новый разрез — всегда <=
 
-#         # Строим первое рассечение по строке с дробной базисной переменной
-#         row_idx, _ = frac_rows[0]
-#         T = history[-1]
-#         basis = getattr(result, 'basis', [])
-#         if row_idx not in basis:
-#             # Не получилось найти строку для рассечения — выходим в перебор
-#             break
+        # снова решаем с добавленным разрезом
+        res = simplex(c, A, b, senses)
+        if res.status != 'optimal':
+            return res
 
-#         cut_row = basis.index(row_idx)
-#         frac_row = T[cut_row]
-#         total_cols = len(frac_row) - 1
+        cuts += 1
 
-#         # f_j = frac(frac_row[j]), rhs = frac(frac_row[-1])
-#         cuts = [
-#             frac_row[j] - frac_row[j].numerator // frac_row[j].denominator
-#             for j in range(total_cols)
-#         ]
-#         rhs_cut = frac_row[-1] - frac_row[-1].numerator // frac_row[-1].denominator
+    return res  # либо оптимальное, либо остановились по cuts
 
-#         # Добавляем cut:  sum(–f_j x_j) <= –f_rhs
-#         A.append([-cuts[j] for j in range(n)])
-#         b.append(-rhs_cut)
-#         c.append(0)          # новая переменная рассечения
-#         senses.append('<=')  # Рассечение добавляем как <=
-
-#     # 2) Если рассечения не дали результата — делаем брутфорс-перебор (для малых n)
-#     best_val = None
-#     best_x = [0] * n
-
-#     # Оценим эвристические верхние границы для каждой x_j
-#     bounds = [
-#         max((b_i // row[j]) if row[j] > 0 else 0 for row, b_i in zip(A, b))
-#         for j in range(n)
-#     ]
-
-#     from itertools import product
-#     for candidate in product(*(range(bounds[j] + 1) for j in range(n))):
-#         # Проверяем все ограничения
-#         if all(
-#             (sum(A[i][j] * candidate[j] for j in range(n)) <= b[i] if senses[i] == '<=' else
-#              sum(A[i][j] * candidate[j] for j in range(n)) >= b[i] if senses[i] == '>=' else
-#              sum(A[i][j] * candidate[j] for j in range(n)) == b[i])
-#             for i in range(len(A))
-#         ):
-#             val = sum(c[j] * candidate[j] for j in range(n))
-#             if best_val is None or val > best_val:
-#                 best_val = val
-#                 best_x = list(candidate)
-
-#     return SimplexResult(
-#         'optimal_integer',
-#         x=best_x,
-#         objective=best_val or 0,
-#         alternative=False,
-#         tableau=None,
-#         history=history
-#     )
+# Пример использования:
+# c = [ ... ]
+# A = [[...], ...]\# b = [...]
+# res_int = gomory_integer(c, A, b)
+# print(res_int.x, res_int.objective)
