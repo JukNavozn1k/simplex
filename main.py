@@ -42,8 +42,10 @@ def main():
     with tabs[0]:
         st.title("Симплекс метод")
 
-        # Метод решения — в самом начале
         method = st.selectbox("Метод решения", ["Симплекс", "Ветвление и границы (BnB)"])
+
+        # Новый выбор: максимум/минимум
+        opt_type = st.radio("Тип задачи", ["Максимум", "Минимум"], horizontal=True)
 
         # Input dimensions
         col1, col2 = st.columns(2)
@@ -61,28 +63,40 @@ def main():
                 coef = st.number_input(f"x{i+1}", key=f"obj_{i}")
                 obj_coeffs.append(coef)
 
+        # Преобразование коэффициентов для минимума
+        if opt_type == "Минимум":
+            obj_coeffs = [-c for c in obj_coeffs]
+
         # Input for constraints
         st.subheader("Ограничения")
         A = []
         b = []
+        senses = []
         for i in range(n_constraints):
             st.write(f"Ограничение {i+1}")
             row = []
-            cols = st.columns(n_vars + 1)
+            cols = st.columns(n_vars + 2)
             for j in range(n_vars):
                 with cols[j]:
                     coef = st.number_input(f"x{j+1}", key=f"cons_{i}_{j}")
                     row.append(coef)
+            with cols[-2]:
+                # Используем символы ≤, ≥, =
+                sense = st.selectbox("Тип", options=["≤", "≥", "="], key=f"sense_{i}")
+                # Преобразуем к формату для simplex
+                sense_map = {"≤": "<=", "≥": ">=", "=": "=="}
+                sense_std = sense_map[sense]
             with cols[-1]:
-                rhs = st.number_input("≤", key=f"rhs_{i}")
+                rhs = st.number_input("Правая часть", key=f"rhs_{i}")
             A.append(row)
             b.append(rhs)
+            senses.append(sense_std)
 
         if st.button("Решить"):
             if method == "Симплекс":
-                result = simplex(obj_coeffs, A, b)
+                result = simplex(obj_coeffs, A, b, senses)
             else:
-                result, x_int = solve_integer(obj_coeffs, A, b)
+                result, x_int = solve_integer(obj_coeffs, A, b, senses)
 
             st.subheader("Результаты")
 
@@ -93,13 +107,20 @@ def main():
                     for i, val in enumerate(result.x):
                         if abs(val) > 1e-8:
                             st.write(f"x{i+1} = {val:.4f}")
-                    st.write(f"Оптимальное значение целевой функции: {result.objective:.4f}")
+                    # Для минимума меняем знак обратно
+                    if opt_type == "Минимум":
+                        st.write(f"Оптимальное значение целевой функции: {-result.objective:.4f}")
+                    else:
+                        st.write(f"Оптимальное значение целевой функции: {result.objective:.4f}")
                     if getattr(result, "alternative", False):
                         st.info("Существует множество оптимальных решений")
                 else:
                     for i, val in enumerate(result.x):
                         st.write(f"x{i+1} = {val}")
-                    st.write(f"Оптимальное значение целевой функции: {result.objective:.4f}")
+                    if opt_type == "Минимум":
+                        st.write(f"Оптимальное значение целевой функции: {-result.objective:.4f}")
+                    else:
+                        st.write(f"Оптимальное значение целевой функции: {result.objective:.4f}")
             else:
                 st.error({
                     'infeasible': "Задача несовместна (нет решений)",
