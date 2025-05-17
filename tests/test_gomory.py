@@ -161,3 +161,58 @@ def test_gomory_integer_senses(case):
     # проверяем вектор
     assert res.x == pytest.approx(case['expected_x'])
     assert sol_pulp == case['expected_x']
+
+@pytest.mark.parametrize("case", [
+    # Несколько оптимальных решений: max x + y s.t. x + y <= 5, x,y >= 0 целые
+    {
+        'c': [1, 1],
+        'A': [[1, 1]],
+        'b': [5],
+        'expected_obj': 5,
+        'expected_x': None,  # может быть любое (0,5), (1,4), (2,3) и т.д.
+    }
+])
+def test_gomory_integer_multiple_optima(case):
+    c, A, b = case['c'], case['A'], case['b']
+    res = gomory_integer(c, [row[:] for row in A], b[:], max_cuts=20)
+
+    assert res.status == 'optimal'
+    assert all(float(xi).is_integer() for xi in res.x)
+    assert pytest.approx(res.objective, rel=1e-6) == case['expected_obj']
+
+@pytest.mark.parametrize("case", [
+    # max -x - 2y s.t. x + y <= 5, x,y >= 0
+    # Ожидается, что решение x=y=0 с obj=0 (максимум от отрицательных)
+    {
+        'c': [-1, -2],
+        'A': [[1, 1]],
+        'b': [5],
+        'expected_obj': 0,
+        'expected_x': [0, 0],
+    }
+])
+def test_gomory_integer_negative_coefficients(case):
+    c, A, b = case['c'], case['A'], case['b']
+    res = gomory_integer(c, [row[:] for row in A], b[:], max_cuts=20)
+
+    assert res.status == 'optimal'
+    assert all(float(xi).is_integer() for xi in res.x)
+    assert pytest.approx(res.objective, rel=1e-6) == case['expected_obj']
+    if case.get('expected_x') is not None:
+        assert res.x == pytest.approx(case['expected_x'])
+
+
+@pytest.mark.parametrize("case", [
+    # max x + y s.t. нет ограничений (т.е. задача не ограничена сверху)
+    {
+        'c': [1, 1],
+        'A': [],
+        'b': [],
+        'expected_status': 'Unbounded',
+    }
+])
+def test_gomory_integer_unbounded(case):
+    c, A, b = case['c'], case['A'], case['b']
+    res = gomory_integer(c, [row[:] for row in A], b[:], max_cuts=20)
+
+    assert res.status.lower() == case['expected_status'].lower()
