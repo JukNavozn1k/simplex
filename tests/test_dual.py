@@ -227,3 +227,82 @@ def test_dual_cycling_case():
     assert pytest.approx(res.objective, rel=1e-6) == 2.0
     assert all(pytest.approx(xi, rel=1e-6) == exp for xi, exp in zip(res.x, [2.0,1.0]))
     assert not res.alternative
+
+
+@pytest.mark.parametrize(
+    "c, A, b, senses, expected_status, expected_obj, expected_x",
+    [
+        # Single >= constraint: maximize x subject to x >= 3, x>=0 -> unbounded
+        ([1], [[1]], [3], ['>='], 'unbounded', None, None),
+        # Single == constraint: maximize 2*x1 + 3*x2 subject to x1 + x2 == 4, x>=0
+        ([2, 3], [[1, 1]], [4], ['=='], 'optimal', 12.0, [0.0, 4.0]),
+        # Mixed constraints: x1 + x2 >= 5 and x1 + 2*x2 == 8
+        ([1, 2], [[1, 1], [1, 2]], [5, 8], ['>=', '=='], 'optimal', 8.0, [2.0, 3.0]),
+    ]
+)
+def test_dual_simplex_with_senses(c, A, b, senses, expected_status, expected_obj, expected_x):
+    res = dual_simplex(c, A, b, senses)
+    assert res.status == expected_status, f"Expected {expected_status}, got {res.status}"
+    if res.status == 'optimal':
+        assert pytest.approx(res.objective, rel=1e-6) == expected_obj
+        for xi, exp in zip(res.x, expected_x):
+            assert pytest.approx(xi, rel=1e-6) == exp
+        # ensure no alternative flag for these strict solutions
+        assert not res.alternative
+    else:
+        # For non-optimal cases, x and objective should be None or irrelevant
+        assert res.x == [] or res.x is None
+        assert res.objective is None
+
+
+
+@pytest.mark.parametrize(
+    "c, A, b, senses, skip_x",
+    [
+        # Test <= constraint: maximize x1 + 2x2 s.t. x1 + x2 <= 5, x1,x2 >= 0
+        ([1, 2], [[1, 1]], [5], ['<='], False),
+
+        # Test == and <=: maximize 3x1 + x2 s.t. x1 + x2 == 4, x1 - x2 <= 1, x1,x2>=0
+        ([3, 1], [[1, 1], [1, -1]], [4, 1], ['==', '<='], False),
+
+        # Alternate solution: maximize x1 + x2 s.t. x1 + x2 == 5, x1,x2 >= 0 (multiple optima)
+        ([1, 1], [[1, 1]], [5], ['=='], True),
+    ]
+)
+def test_dual_simplex_against_scipy(c, A, b, senses, skip_x):
+    res = dual_simplex(c, A, b, senses)
+
+    # Prepare bounds and constraints for linprog
+    bounds = [(0, None)] * len(c)
+    A_ub, b_ub, A_eq, b_eq = [], [], [], []
+    for row, rhs, sense in zip(A, b, senses):
+        if sense == '<=':
+            A_ub.append(row);
+            b_ub.append(rhs)
+        elif sense == '>=':
+            A_ub.append([-a for a in row]);
+            b_ub.append(-rhs)
+        elif sense == '==':
+            A_eq.append(row);
+            b_eq.append(rhs)
+
+    result = linprog(
+        c=[-ci for ci in c],
+        A_ub=A_ub or None,
+        b_ub=b_ub or None,
+        A_eq=A_eq or None,
+        b_eq=b_eq or None,
+        bounds=bounds,
+        method='highs'
+    )
+
+    assert result.success, "Linprog failed, can't validate test"
+    assert res.status == 'optimal', f"Expected optimal, got {res.status}"
+    assert pytest.approx(res.objective, rel=1e-6) == -result.fun
+
+    if not skip_x:
+        for xi, expected in zip(res.x, result.x):
+            assert pytest.approx(xi, rel=1e-6) == expected
+    else:
+        # For multiple optima, just check alternative flag
+        assert res.alternative, "Expected alternative=True for multiple optimal solutions"
