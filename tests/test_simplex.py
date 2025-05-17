@@ -234,3 +234,196 @@ def test_cycling_case():
                for xi, exp in zip(res.x, [2.0, 1.0]))
     # Это единственный оптимум
     assert not res.alternative
+
+@pytest.mark.parametrize("case", [
+    # 1) Комбинация <= и >=: 0 ≤ x ≤ 1, max x ⇒ x*=1
+    {
+        'c': [1],
+        'A': [[1],  # x ≤ 1
+              [1]], # x ≥ 0
+        'b': [1, 0],
+        'senses': ['<=', '>='],
+        'status': 'optimal',
+        'objective': 1.0,
+        'x': [1.0],
+    },
+    # 2) == и <=: x == 2, x ≤ 5 ⇒ x*=2
+    {
+        'c': [1],
+        'A': [[1],  # == 2
+              [1]], # ≤ 5
+        'b': [2, 5],
+        'senses': ['==', '<='],
+        'status': 'optimal',
+        'objective': 2.0,
+        'x': [2.0],
+    },
+    # 3) >= с альтернативой: x + y ≥ 3 и ≤ 3 одновременно (==3), альтернатива
+    {
+        'c': [1, 1],
+        'A': [[1, 1],  # ≥ 3
+              [1, 1]], # ≤ 3
+        'b': [3, 3],
+        'senses': ['>=', '<='],
+        'status': 'optimal',
+        'objective': 3.0,
+        'alternative': True,  # любое (x,y) с суммой 3
+    },
+    # 4) чистое == с вырожденным optimum: x+2y == 4, max x + 2y ⇒ любая точка суммы=4
+    {
+        'c': [1, 2],
+        'A': [[1, 2]],
+        'b': [4],
+        'senses': ['=='],
+        'status': 'optimal',
+        'objective': 4.0,
+        'alternative': True,
+    },
+])
+def test_senses_variants(case):
+    res = simplex(case['c'], case['A'], case['b'], case['senses'])
+    assert res.status == case['status']
+    if res.status == 'optimal':
+        assert pytest.approx(res.objective, rel=1e-6) == case['objective']
+        if 'x' in case:
+            for xi, exp in zip(res.x, case['x']):
+                assert pytest.approx(xi, rel=1e-6) == exp
+        # проверяем флаг alternative только если он явно указан в кейсе
+        if 'alternative' in case:
+            assert res.alternative == case['alternative']
+
+
+
+
+import numpy as np
+from scipy.optimize import linprog
+
+def linprog_solve(c, A, b, signs):
+    A_ub, b_ub, A_eq, b_eq = [], [], [], []
+    for row, sign, rhs in zip(A, signs, b):
+        if sign == "<=":
+            A_ub.append(row)
+            b_ub.append(rhs)
+        elif sign == ">=":
+            A_ub.append([-a for a in row])
+            b_ub.append(-rhs)
+        elif sign == "==":
+            A_eq.append(row)
+            b_eq.append(rhs)
+        else:
+            raise ValueError(f"Invalid constraint sign: {sign}")
+    result = linprog(c, A_ub=np.array(A_ub) if A_ub else None,
+                        b_ub=np.array(b_ub) if b_ub else None,
+                        A_eq=np.array(A_eq) if A_eq else None,
+                        b_eq=np.array(b_eq) if b_eq else None,
+                        method="highs")
+    return result.status, result.x, result.fun
+
+
+
+import numpy as np
+import pytest
+from scipy.optimize import linprog
+
+@pytest.mark.parametrize(
+    "c, A, b, signs, exp_status, exp_x, exp_obj",
+    [
+        # 1) Только <=, уникальный оптимум: max x + 2y s.t. x ≤ 1, y ≤ 2
+        #    => (x,y) = (1,2), obj = 1 + 2*2 = 5
+        (
+            [-1, -2],
+            [[1, 0],
+             [0, 1]],
+            [1, 2],
+            ["<=", "<="],
+            0,           # SciPy status 0 == optimal
+            [1.0, 2.0],
+            -5.0         # linprog возвращает fun = c·x, здесь = -5
+        ),
+
+        # 2) Чистое ==, уникальный оптимум: max x + 2y s.t. x + y == 3
+        #    => оптимум при y максимально => (x,y) = (0,3), obj = 0 + 2*3 = 6
+        (
+            [-1, -2],
+            [[1, 1]],
+            [3],
+            ["=="],
+            0,
+            [0.0, 3.0],
+            -6.0
+        ),
+
+        # 3) Смешанное >= и <=, порождает ==, альтернативный оптимум:
+        #    max x + y s.t. x + y ≥ 3  и  x + y ≤ 3  ⇒  x + y == 3
+        #    целевая x+y любая точка с суммой=3, но linprog даст один из них.
+        (
+            [-1, -1],
+            [[1, 1],
+             [1, 1]],
+            [3, 3],
+            [">=", "<="],
+            0,
+            None,        # x может быть (3,0) или (0,3)
+            -3.0         # fun = -(x+y) = -3
+        ),
+
+        # 4) Невыполнимое: x ≤ 1 и x ≥ 3 противоречивы
+        (
+            [-1],
+            [[1],
+             [1]],
+            [1, 3],
+            ["<=", ">="],
+            2,           # SciPy status 2 == infeasible
+            None,
+            None
+        ),
+
+        # 5) Неограниченное: max x + y s.t. x - y ≥ 0
+        #    и нет верхних границ ⇒ неограничено
+        (
+            [-1, -1],
+            [[1, -1]],
+            [0],
+            [">="],
+            3,           # SciPy status 3 == unbounded
+            None,
+            None
+        ),
+    ]
+)
+def test_linprog_general(c, A, b, signs, exp_status, exp_x, exp_obj):
+    # Разбиваем на A_ub/b_ub и A_eq/b_eq
+    A_ub, b_ub, A_eq, b_eq = [], [], [], []
+    for row, sign, rhs in zip(A, signs, b):
+        if sign == "<=":
+            A_ub.append(row); b_ub.append(rhs)
+        elif sign == ">=":
+            # переворачиваем для <=
+            A_ub.append([-v for v in row]); b_ub.append(-rhs)
+        elif sign == "==":
+            A_eq.append(row); b_eq.append(rhs)
+        else:
+            raise ValueError(f"Unknown sign {sign!r}")
+
+    res = linprog(
+        c,
+        A_ub=np.array(A_ub) if A_ub else None,
+        b_ub=np.array(b_ub) if b_ub else None,
+        A_eq=np.array(A_eq) if A_eq else None,
+        b_eq=np.array(b_eq) if b_eq else None,
+        bounds=(0, None),
+        method="highs"
+    )
+
+    # Проверяем статус
+    assert res.status == exp_status
+
+    # Если optimal, проверяем x и fun
+    if exp_status == 0:
+        if exp_x is not None:
+            np.testing.assert_allclose(
+                res.x, exp_x, rtol=1e-6, atol=1e-6,
+                err_msg=f"Expected x={exp_x}, got {res.x}"
+            )
+        assert pytest.approx(res.fun, rel=1e-6) == exp_obj

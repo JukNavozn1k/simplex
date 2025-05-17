@@ -19,11 +19,13 @@ def pivot(tableau, basis, row, col):
             tableau[r] = [a - factor * b for a, b in zip(tableau[r], tableau[row])]
     basis[row] = col
 
+
 def bland_rule(tableau, last_row):
     for j, coeff in enumerate(last_row[:-1]):
         if coeff < 0:
             return j
     return None
+
 
 def find_leaving_variable(tableau, basis, col):
     min_ratio = None
@@ -40,37 +42,59 @@ def find_leaving_variable(tableau, basis, col):
                 pivot_row = i
     return pivot_row
 
-def build_tableau(c, A, b, phase):
-    m, n = len(A), len(c)
-    tableau = []
 
-    # Ограничения
+def build_tableau(c, A, b, senses, phase):
+    m, n = len(A), len(c)
+    # count variables
+    slack_indices = []  # map constraint to slack index if any
+    art_indices = []    # map constraint to artificial index if any
+    slack_count = sum(1 for s in senses if s in ('<=', '>='))
+    art_count = sum(1 for s in senses if s in ('>=', '=='))
+
+    tableau = []
+    # prepare offsets
     for i in range(m):
         row = list(map(F, A[i]))
-        row += [F(0)] * m               # slack
+        # slack
+        slack = [F(0)] * slack_count
+        # artificial
+        art = [F(0)] * art_count
+        # RHS
+        rhs = F(b[i])
+        # assign slack/artificial
+        # determine slack position
+        slack_pos = sum(1 for t in senses[:i] if t in ('<=','>='))
+        art_pos = sum(1 for t in senses[:i] if t in ('>=','=='))
+        if senses[i] == '<=':
+            slack[slack_pos] = F(1)
+        elif senses[i] == '>=':
+            # surplus
+            slack[slack_pos] = F(-1)
+            art[art_pos] = F(1)
+        elif senses[i] == '==':
+            art[art_pos] = F(1)
+        # combine
+        row += slack
         if phase == 1:
-            row += [F(0)] * m           # artificial
-        row.append(F(b[i]))            # RHS
-
-        row[n + i] = F(1)              # единица для slack i
-        if phase == 1:
-            row[n + m + i] = F(1)      # единица для artificial i
-
+            row += art
+        row.append(rhs)
         tableau.append(row)
 
-    # Строка стоимости
+    # cost row
     if phase == 1:
-        total_cols = n + m + m + 1
-        cost = [F(0)] * total_cols
+        total_cols = n + slack_count + art_count + 1
+        cost = [F(0)] * (n + slack_count) + [F(0)] * art_count + [F(0)]
+        # sum artificial rows
         for i in range(m):
-            for j in range(total_cols):
+            for j in range(len(cost)):
                 cost[j] -= tableau[i][j]
         tableau.append(cost)
     else:
-        cost = list(map(lambda v: -F(v), c)) + [F(0)] * m + [F(0)]
+        cost = list(map(lambda v: -F(v), c)) + [F(0)] * slack_count + [F(0)]
         tableau.append(cost)
 
-    return tableau
+    return tableau, slack_count, art_count
+
 
 def extract_solution(tableau, basis, n):
     x = [0] * n
@@ -79,18 +103,17 @@ def extract_solution(tableau, basis, n):
             x[var] = float(tableau[i][-1])
     return x
 
-def simplex(c, A, b):
+
+def simplex(c, A, b, senses=None):
     m, n = len(A), len(c)
-
-    # История таблиц
+    if senses is None:
+        senses = ['<='] * m
     history = []
-
-    # === Фаза I ===
-    T = build_tableau(c, A, b, phase=1)
-    basis = [n + i for i in range(m)]
-
-    history.append(deepcopy(T))  # сохраняем начальную таблицу фазы I
-
+    # Phase I
+    T, slack_count, art_count = build_tableau(c, A, b, senses, phase=1)
+    basis = [n + slack_count + i for i in range(m)]  # artificials in basis
+    history.append(deepcopy(T))
+    # remove fake rows if slack-only
     while True:
         col = bland_rule(T, T[-1])
         if col is None:
@@ -99,26 +122,24 @@ def simplex(c, A, b):
         if row is None:
             return SimplexResult("infeasible", tableau=deepcopy(T), history=history)
         pivot(T, basis, row, col)
-        history.append(deepcopy(T))  # сохраняем таблицу после каждого шага pivot
-
+        history.append(deepcopy(T))
     if T[-1][-1] != 0:
         return SimplexResult("infeasible", tableau=deepcopy(T), history=history)
-
-    # Убираем искусственные переменные и строку из фазы I
-    T = [row[:n + m] + [row[-1]] for row in T[:-1]]
-
-    # Формируем строку стоимости фазы II и корректируем по базису
-    T.append(list(map(lambda v: -F(v), c)) + [F(0)] * m + [F(0)])
+    # remove artificial columns and cost row
+    # strip artificial vars
+    for i in range(len(T)):
+        # remove columns n+slack_count to n+slack_count+art_count
+        del T[i][n+slack_count:n+slack_count+art_count]
+    # Phase II cost integration
+    T[-1] = list(map(lambda v: -F(v), c)) + [F(0)] * slack_count + [F(0)]
     for i, var in enumerate(basis):
-        if var < n:
+        if var < n + slack_count:
             coef = T[-1][var]
             if coef != 0:
                 for j in range(len(T[0])):
                     T[-1][j] -= coef * T[i][j]
-
-    history.append(deepcopy(T))  # сохраняем таблицу после подготовки фазы II
-
-    # === Фаза II ===
+    history.append(deepcopy(T))
+    # Phase II
     while True:
         col = bland_rule(T, T[-1])
         if col is None:
@@ -127,20 +148,11 @@ def simplex(c, A, b):
         if row is None:
             return SimplexResult("unbounded", tableau=deepcopy(T), history=history)
         pivot(T, basis, row, col)
-        history.append(deepcopy(T))  # сохраняем таблицу после каждого шага pivot
-
-    # Извлекаем решение
+        history.append(deepcopy(T))
     x = extract_solution(T, basis, n)
     obj = T[-1][-1]
-
-    # Определяем наличие альтернативного оптимального решения
-    alt_main = any(
-        j < n and j not in basis and T[-1][j] == 0
-        for j in range(n)
-    )
+    alt_main = any(j < n and j not in basis and T[-1][j] == 0 for j in range(n))
     alt_zero_c = all(ci == 0 for ci in c)
     alt_redundant = (m > n and all(ci > 0 for ci in c))
-
     alternative = alt_main or alt_zero_c or alt_redundant
-
     return SimplexResult("optimal", x, obj, alternative, tableau=deepcopy(T), history=history)
