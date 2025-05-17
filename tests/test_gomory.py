@@ -29,6 +29,28 @@ def solve_pulp_int(c, A, b):
     return status, sol, float(obj_val)
 
 
+def solve_pulp_int_extended(c, A, b, senses):
+    prob = pulp.LpProblem('gomory_test_ext', pulp.LpMaximize)
+    n = len(c)
+    x = [pulp.LpVariable(f'x{i}', lowBound=0, cat='Integer') for i in range(n)]
+    prob += pulp.lpDot(c, x)
+    for Ai, bi, s in zip(A, b, senses):
+        if s == '<=':
+            prob += (pulp.lpDot(Ai, x) <= bi)
+        elif s == '>=':
+            prob += (pulp.lpDot(Ai, x) >= bi)
+        elif s == '==':
+            prob += (pulp.lpDot(Ai, x) == bi)
+        else:
+            raise ValueError(f"Unknown sense {s!r}")
+    prob.solve(pulp.PULP_CBC_CMD(msg=False))
+    status = pulp.LpStatus[prob.status]
+    if status != 'Optimal':
+        return status, None, None
+    sol = [int(v.varValue) for v in x]
+    obj = float(pulp.value(prob.objective) or 0.0)
+    return status, sol, obj
+
 @pytest.mark.parametrize("case", [
     # 1) Простой оптимум: max 2x + 3y s.t. x + y <= 4
     {
@@ -97,27 +119,7 @@ def test_gomory_integer(case):
         # если expected_x=None, просто проверяем, что Gomory и PuLP дали один и тот же obj
         assert pytest.approx(res.objective, rel=1e-6) == obj_pulp
 
-def solve_pulp_int_extended(c, A, b, senses):
-    prob = pulp.LpProblem('gomory_test_ext', pulp.LpMaximize)
-    n = len(c)
-    x = [pulp.LpVariable(f'x{i}', lowBound=0, cat='Integer') for i in range(n)]
-    prob += pulp.lpDot(c, x)
-    for Ai, bi, s in zip(A, b, senses):
-        if s == '<=':
-            prob += (pulp.lpDot(Ai, x) <= bi)
-        elif s == '>=':
-            prob += (pulp.lpDot(Ai, x) >= bi)
-        elif s == '==':
-            prob += (pulp.lpDot(Ai, x) == bi)
-        else:
-            raise ValueError(f"Unknown sense {s!r}")
-    prob.solve(pulp.PULP_CBC_CMD(msg=False))
-    status = pulp.LpStatus[prob.status]
-    if status != 'Optimal':
-        return status, None, None
-    sol = [int(v.varValue) for v in x]
-    obj = float(pulp.value(prob.objective) or 0.0)
-    return status, sol, obj
+
 
 
 @pytest.mark.parametrize("case", [
