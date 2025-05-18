@@ -1,6 +1,6 @@
 import streamlit as st
 
-from simplex import simplex, dual_simplex
+from simplex import simplex, dual_simplex, gomory_integer, solve_integer
 
 def show_instructions():
     st.title("Инструкция по применению")
@@ -14,6 +14,8 @@ def show_instructions():
     2. **Выберите метод решения:**  
        * Симплекс — классический симплекс-метод  
        * Двойственный симплекс — двойственный симплекс-метод (например, если исходное базисное решение не удовлетворяет ограничениям)
+       * Гомори — метод разрезов Гомори для поиска целочисленного решения
+       * Ветвей и границ — метод ветвей и границ для целочисленного программирования
 
     3. **Ввод ограничений:**  
        * Для каждого ограничения выберите знак: ≤, ≥ или =  
@@ -35,7 +37,7 @@ def show_instructions():
     6. **Результаты:**  
        * Для задачи на минимум итоговое значение целевой функции автоматически пересчитывается обратно.
        * История итераций симплекс-метода доступна для просмотра.
-
+       * Для целочисленных методов (Гомори, Ветвей и границ) переменные в решении будут целыми числами.
     """)
 
 
@@ -49,7 +51,10 @@ def main():
     with tabs[0]:
         st.title("Симплекс метод")
 
-        method = st.selectbox("Метод решения", ["Симплекс", "Двойственный симплекс"])
+        method = st.selectbox(
+            "Метод решения",
+            ["Симплекс", "Двойственный симплекс", "Гомори", "Ветвей и границ"]
+        )
 
         opt_type = st.radio("Тип задачи", ["Максимум", "Минимум"], horizontal=True)
 
@@ -95,12 +100,18 @@ def main():
         if st.button("Решить"):
             if method == "Симплекс":
                 result = simplex(obj_coeffs, A, b, senses)
-            else:
+            elif method == "Двойственный симплекс":
                 result = dual_simplex(obj_coeffs, A, b, senses)
+            elif method == "Гомори":
+                result = gomory_integer(obj_coeffs, A, b, senses)
+            elif method == "Ветвей и границ":
+                result, _ = solve_integer(obj_coeffs, A, b, senses)
+            else:
+                result = None
 
             st.subheader("Результаты")
 
-            if result.status == 'optimal':
+            if result is not None and result.status == 'optimal':
                 st.success("Найдено оптимальное решение!")
                 st.write("Значения переменных:")
                 for i, val in enumerate(result.x):
@@ -116,7 +127,7 @@ def main():
                 st.error({
                     'infeasible': "Задача несовместна (нет решений)",
                     'unbounded': "Задача неограничена (целевую функцию можно увеличивать неограниченно)",
-                }.get(result.status, "Не удалось найти решение"))
+                }.get(getattr(result, "status", None), "Не удалось найти решение"))
 
             if hasattr(result, "history") and result.history:
                 st.subheader("История итераций")
