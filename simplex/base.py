@@ -246,7 +246,32 @@ def simplex(c, A, b, senses=None):
         history.append(deepcopy(T))
     x = extract_solution(T, basis, n)
     obj = T[-1][-1]
-    alt_main = any(j < n and j not in basis and T[-1][j] == 0 for j in range(n))
+    # Detect alternative optima:
+    # - any non-basic original variable (j < n) with zero reduced cost
+    # - OR any non-basic slack variable (j >= n) with zero reduced cost whose column
+    #   would change at least one basic original variable (i.e., has non-zero entry
+    #   in a row whose basic var is an original variable)
+    alt_main = False
+    cols_to_check = n + slack_count
+    for j in range(cols_to_check):
+        if j in basis:
+            continue
+        if T[-1][j] != 0:
+            continue
+        # if it's an original var, it's a clear alternate
+        if j < n:
+            alt_main = True
+            break
+        # otherwise it's a slack; check whether entering j would change original vars
+        for i in range(len(basis)):
+            bi = basis[i]
+            if bi is None:
+                continue
+            if bi < n and T[i][j] != 0:
+                alt_main = True
+                break
+        if alt_main:
+            break
     alt_zero_c = all(ci == 0 for ci in c)
     alt_redundant = (m > n and all(ci > 0 for ci in c))
     alternative = alt_main or alt_zero_c or alt_redundant

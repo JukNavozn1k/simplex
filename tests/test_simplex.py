@@ -36,8 +36,8 @@ def solve_pulp(c, A, b):
     { 'c': [1,1], 'A': [[1,0],[0,1]], 'b':[-1,-1], 'status':'infeasible' },
     # alternative opt
     { 'c': [1,1], 'A': [[1,0],[0,1],[1,1]], 'b':[1,1,2], 'status':'optimal', 'alternative':True },
-    # degenerate (e.g.),
-    { 'c': [1,1], 'A': [[1,1],[1,0]], 'b':[2,1], 'status':'optimal' }
+    # degenerate (e.g.), multiple optima present (e.g., (1,1) and (0,2))
+    { 'c': [1,1], 'A': [[1,1],[1,0]], 'b':[2,1], 'status':'optimal', 'alternative': True }
 ])
 def test_simplex_cases(case):
     res = simplex(case['c'], case['A'], case['b'])
