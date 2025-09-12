@@ -153,6 +153,97 @@ def simplex(c, A, b, senses=None):
             # check immediate contradiction
             if lbs[j] is not None and ubs[j] is not None and lbs[j] > ubs[j]:
                 return SimplexResult("infeasible")
+    # Pairwise check: if two rows are proportional, their implied bounds on the
+    # same linear form must be consistent.
+    for i in range(m):
+        vi = list(map(F, A[i]))
+        bi = F(b[i])
+        si = senses[i]
+        for j in range(i+1, m):
+            vj = list(map(F, A[j]))
+            bj = F(b[j])
+            sj = senses[j]
+            # find scalar t such that vi = t * vj (if exists)
+            t = None
+            proportional = True
+            for k in range(n):
+                a = vi[k]
+                cj = vj[k]
+                if cj == 0 and a == 0:
+                    continue
+                if cj == 0:
+                    proportional = False
+                    break
+                # candidate t = a / cj
+                tk = a / cj
+                if t is None:
+                    t = tk
+                elif tk != t:
+                    proportional = False
+                    break
+            if not proportional or t is None:
+                continue
+            # Now express both constraints as bounds on s = vi · x
+            # For constraint i: si relates s and bi directly: if si=='<=' then s <= bi; if '>=' then s >= bi; if '==' then s==bi
+            lb = None
+            ub = None
+            def apply_constraint_to_bounds(sense, rhs_val, scale):
+                # rhs_val is bj for vj; scale converts vj·x to vi·x: vi·x = scale * vj·x
+                nonlocal lb, ub
+                if sense == '==':
+                    val = scale * rhs_val
+                    if lb is None or val > lb:
+                        lb = val
+                    if ub is None or val < ub:
+                        ub = val
+                elif sense == '<=':
+                    val = scale * rhs_val
+                    # if scale positive, gives upper bound; if negative, gives lower bound (inequality flips)
+                    if scale > 0:
+                        if ub is None or val < ub:
+                            ub = val
+                    else:
+                        if lb is None or val > lb:
+                            lb = val
+                elif sense == '>=':
+                    val = scale * rhs_val
+                    if scale > 0:
+                        if lb is None or val > lb:
+                            lb = val
+                    else:
+                        if ub is None or val < ub:
+                            ub = val
+
+            # apply i (scale 1)
+            apply_constraint_to_bounds(si, bi, F(1))
+            # apply j (scale t) because vi = t * vj -> vi·x = t * (vj·x)
+            apply_constraint_to_bounds(sj, bj, t)
+            # now check consistency
+            if lb is not None and ub is not None and lb > ub:
+                return SimplexResult("infeasible")
+    # For each '>=' constraint, check the maximum possible value of its LHS
+    # under the other constraints. If that maximum is strictly less than the
+    # required RHS, the system is infeasible.
+    for idx, (row, rhs, sense) in enumerate(zip(A, b, senses)):
+        if sense != '>=':
+            continue
+        # build LP: maximize row · x subject to all constraints except idx
+        c_check = list(row)
+        A_check = [r for j, r in enumerate(A) if j != idx]
+        b_check = [bv for j, bv in enumerate(b) if j != idx]
+        senses_check = [s for j, s in enumerate(senses) if j != idx]
+        # run simplex to maximize c_check^T x
+        try:
+            res_check = simplex(c_check, A_check, b_check, senses_check)
+        except Exception:
+            # if recursive call fails for some reason, skip this check
+            continue
+        if res_check.status == 'optimal':
+            # use float comparison with tiny tolerance
+            if res_check.objective is None:
+                continue
+            if res_check.objective < float(rhs) - 1e-9:
+                return SimplexResult("infeasible")
     history = []
     # Phase I
     T, slack_count, art_count = build_tableau(c, A, b, senses, phase=1)

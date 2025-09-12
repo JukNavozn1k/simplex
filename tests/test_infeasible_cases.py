@@ -34,6 +34,22 @@ from simplex import simplex
         ['==','=='],
         'duplicate row with different RHS'
     ),
+    # 5) contradictory sum constraints: x1 + x2 <= 2 and x1 + x2 >= 5
+    (
+        [1,1],
+        [[1,1],[1,1]],
+        [2,5],
+        ['<=','>='],
+        'sum constrained both <=2 and >=5'
+    ),
+    # 6) nontrivial infeasible region: small polygon from first two constraints cannot satisfy third
+    (
+        [1,1],
+        [[2,1],[1,2],[1,1]],
+        [4,4,5],
+        ['<=','<=','>='],
+        '2x1+x2<=4, x1+2x2<=4, x1+x2>=5'
+    ),
 ])
 def test_infeasible_cases(c, A, b, senses, reason):
     res = simplex(c, A, b, senses)
