@@ -148,3 +148,59 @@ def test_dual_unbounded_and_pulp(c, A, b, expected_status):
         sol = [v.varValue for v in x]
         obj_pulp = sum(ci * xi for ci, xi in zip(c, sol))
         assert pytest.approx(res.objective, rel=1e-6) == obj_pulp
+
+
+@pytest.mark.skipif(not PULP, reason="PuLP не установлен")
+@pytest.mark.parametrize("c,A,b", [
+    ([3, 5],
+     [[1, 0],
+      [0, 2],
+      [3, 2]],
+     [4, 12, 18]),
+    ([0, 0],
+     [[1, 0],
+      [0, 1]],
+     [10, 20]),
+    ([2, 1],
+     [[1, 1],
+      [2, 2],
+      [0, 1]],
+     [3, 6, 2]),
+])
+def test_against_pulp(c, A, b):
+    res = dual_simplex(c, A, b)
+    # use same helper as base tests: solve via pulp
+    def solve_pulp(c, A, b):
+        prob = pulp.LpProblem('test', pulp.LpMaximize)
+        n = len(c)
+        x = [pulp.LpVariable(f'x{i}', lowBound=0) for i in range(n)]
+        prob += pulp.lpDot(c, x)
+        for Ai, bi in zip(A, b):
+            prob += pulp.lpDot(Ai, x) <= bi
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        if pulp.LpStatus[prob.status] != 'Optimal':
+            return pulp.LpStatus[prob.status], None
+        return 'Optimal', [v.varValue for v in x]
+
+    status_pulp, sol_pulp = solve_pulp(c, A, b)
+
+    expected_status = "Optimal" if res.status == "optimal" else None
+    assert status_pulp == expected_status, f"PuLP дал {status_pulp}, ожидаем {expected_status}"
+
+    if status_pulp == 'Optimal':
+        obj_pulp = sum(ci * xi for ci, xi in zip(c, sol_pulp))
+        assert pytest.approx(res.objective, rel=1e-6) == obj_pulp
+        if any(ci != 0 for ci in c):
+            for xi_simplex, xi_pulp in zip(res.x, sol_pulp):
+                assert pytest.approx(xi_simplex, rel=1e-6) == xi_pulp
+        else:
+            assert res.alternative, "Ожидаем alternative=True при нулевой целевой"
+
+
+@pytest.mark.parametrize("c,A,b", [
+    ([1, 1], [[1, -1]], [1]),
+    ([1, 2], [[1, -2]], [0]),
+])
+def test_explicit_unbounded_cases(c, A, b):
+    res = dual_simplex(c, A, b)
+    assert res.status == 'unbounded'
