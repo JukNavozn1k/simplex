@@ -101,8 +101,14 @@ def dual_simplex(c, A, b, senses=None):
         # import here to avoid cyclic imports at module load
         from simplex import simplex as primal_simplex
         pre = primal_simplex(c, A, b, senses)
-        if pre.status == 'infeasible':
-            return SimplexResult('infeasible')
+        # If primal simplex returned a definitive result, prefer it — this
+        # ensures behavior is consistent with the main solver (base.simplex).
+        if pre is not None and hasattr(pre, 'status'):
+            if pre.status == 'infeasible':
+                return SimplexResult('infeasible')
+            # if primal found optimal/unbounded, just return its result
+            if pre.status in ('optimal', 'unbounded'):
+                return pre
     except Exception:
         # if primal check fails for any reason, continue with dual procedure
         pass

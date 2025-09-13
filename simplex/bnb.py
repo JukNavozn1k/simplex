@@ -1,5 +1,7 @@
 from copy import deepcopy
-from .base import simplex, SimplexResult
+# use dual simplex for the LP solves
+from .dual import dual_simplex as simplex
+from .base import SimplexResult
 import math
 
 class BnBResult:
