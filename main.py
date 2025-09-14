@@ -1,6 +1,7 @@
 import streamlit as st
 
-from simplex import simplex, gomory_integer, solve_integer
+from simplex import gomory_integer, solve_integer
+from simplex.dual import dual_simplex
 
 def show_instructions():
     st.title("Инструкция по применению")
@@ -98,7 +99,8 @@ def main():
 
         if st.button("Решить"):
             if method == "Симплекс":
-                result = simplex(obj_coeffs, A, b, senses)
+                # use dual simplex implementation
+                result = dual_simplex(obj_coeffs, A, b, senses)
             elif method == "Гомори":
                 result = gomory_integer(obj_coeffs, A, b, senses)
             elif method == "Ветвей и границ":
