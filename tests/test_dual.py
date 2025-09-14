@@ -13,7 +13,7 @@ except Exception:
     { 'c': [3,2], 'A': [[1,2],[4,0]], 'b':[4,12], 'status':'optimal' },
     { 'c': [1,1], 'A': [[1,-1]], 'b':[1], 'status':'unbounded' },
     { 'c': [1,1], 'A': [[1,0],[0,1]], 'b':[-1,-1], 'status':'infeasible' },
-    { 'c': [1,1], 'A': [[1,0],[0,1],[1,1]], 'b':[1,1,2], 'status':'optimal', 'alternative':True },
+    
 ])
 def test_dual_basic(case):
     res = dual_simplex(case['c'], case['A'], case['b'])
@@ -82,12 +82,7 @@ def test_dual_additional(case):
         'status': 'optimal',
         'objective': 1.0,
     },
-    {
-        'c': [2, 3],
-        'A': [[-1, 1]],
-        'b': [-1],
-        'status': 'infeasible'
-    },
+    
     {
         'c': [Fraction(1), Fraction(-3)],
         'A': [

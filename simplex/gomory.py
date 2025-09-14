@@ -1,7 +1,7 @@
 from copy import deepcopy
 from fractions import Fraction as F
 
-from .base import simplex,SimplexResult
+from .dual import dual_simplex as simplex,SimplexResult
 
 # --- (existing Simplex implementation as before) ---
 # assume pivot, bland_rule, find_leaving_variable, build_tableau,

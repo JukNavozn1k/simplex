@@ -1,5 +1,5 @@
 from copy import deepcopy
-from .base import simplex, SimplexResult
+from .dual import dual_simplex as simplex, SimplexResult
 import math
 
 class BnBResult:
