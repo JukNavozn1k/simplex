@@ -39,14 +39,22 @@ def gomory_integer(c, A, b, senses=None, max_cuts=10):
             # все целые!
             return SimplexResult('optimal', res.x, res.objective, tableau=res.tableau, history=res.history)
 
-        # формируем разрез Гомори: сумма дробных частей row_ij * x_j >= frac_part(b_i)
-        # но переписываем в форме <=:
+        # формируем разрез Гомори: используем только коэффициенты при
+        # оригинальных переменных (первые n столбцов таблицы).
         row = T[row_idx]
-        frac_rhs = F(row[-1]) - F(int(row[-1]))
-        # коэффициенты нового ограничения
+        n = len(c)
+        # дробная часть в [0,1)
+        def frac_part(val: F) -> F:
+            f = F(val) - F(int(F(val)))
+            if f < 0:
+                f += 1
+            return f
+
+        frac_rhs = frac_part(F(row[-1]))
+        # коэффициенты нового ограничения: только первые n коэффициентов
         new_A = []
-        for aij in row[:-1]:
-            frac_a = F(aij) - F(int(aij))
+        for aij in row[:n]:
+            frac_a = frac_part(F(aij))
             new_A.append(frac_a)
         # добавляем строку ∑ frac(aij) x_j  <= frac(rhs)
         A.append([float(f) for f in new_A])
