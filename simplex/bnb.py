@@ -52,21 +52,24 @@ def solve_integer(c, A, b, senses=None):
     s.t. A x (<=,>=,==) b  — любые исходные типы
          x целые, x >= 0
     """
-    # 1) исходные ограничения + их типы
     orig_s = senses or ['<='] * len(A)
     A0, b0, s0 = deepcopy(A), deepcopy(b), list(orig_s)
 
-    # 2) добавляем x_j >= 0 как -x_j <= 0
+    # добавляем x_j >= 0 как -x_j <= 0
     for j in range(len(c)):
-        row = [0]*len(c); row[j] = -1
+        row = [0] * len(c)
+        row[j] = -1
         A0.append(row); b0.append(0); s0.append('<=')
 
-    # 3) индексы целых
     integer_indices = list(range(len(c)))
-
-    # 4) запускаем B&B
     res = branch_and_bound(c, A0, b0, s0, integer_indices)
 
-    if res is None or res.status != 'optimal':
+    if res is None:
+        # Совсем не нашли решений
         return SimplexResult('infeasible'), None
-    return SimplexResult('optimal', res.x, res.objective), res.x
+    elif res.status == 'optimal':
+        return SimplexResult('optimal', res.x, res.objective), res.x
+    else:
+        # на всякий случай, если появятся другие статусы
+        return SimplexResult(res.status, res.x, res.objective), res.x
+
