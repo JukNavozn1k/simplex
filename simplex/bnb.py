@@ -8,7 +8,7 @@ class BnBResult:
         self.x = x or []
         self.objective = objective
 
-def branch_and_bound(c, A, b, senses, integer_indices, best=None, depth=0, max_depth=50):
+def branch_and_bound(c, A, b, senses, best=None, depth=0, max_depth=50):
     """Внутренний B&B: все ограничения — только '<=' или '=='."""
     if depth > max_depth:
         return best or BnBResult('infeasible')
@@ -22,7 +22,7 @@ def branch_and_bound(c, A, b, senses, integer_indices, best=None, depth=0, max_d
         return best
 
     # Найти первую дробную переменную
-    for i in integer_indices:
+    for i in range(len(x_relaxed)):
         if abs(x_relaxed[i] - round(x_relaxed[i])) > 1e-9:
             break
     else:
@@ -36,13 +36,13 @@ def branch_and_bound(c, A, b, senses, integer_indices, best=None, depth=0, max_d
     A1, b1, s1 = deepcopy(A), deepcopy(b), list(senses)
     row1 = [0]*len(c); row1[i] = 1
     A1.append(row1); b1.append(fl); s1.append('<=')
-    best = branch_and_bound(c, A1, b1, s1, integer_indices, best, depth+1, max_depth)
+    best = branch_and_bound(c, A1, b1, s1, best, depth+1, max_depth)
 
     # GE-ветвь через <=:  -x_i <= -ceil(xi)
     A2, b2, s2 = deepcopy(A), deepcopy(b), list(senses)
     row2 = [0]*len(c); row2[i] = -1
     A2.append(row2); b2.append(-ce); s2.append('<=')
-    best = branch_and_bound(c, A2, b2, s2, integer_indices, best, depth+1, max_depth)
+    best = branch_and_bound(c, A2, b2, s2, best, depth+1, max_depth)
 
     return best
 
@@ -55,14 +55,13 @@ def solve_integer(c, A, b, senses=None):
     orig_s = senses or ['<='] * len(A)
     A0, b0, s0 = deepcopy(A), deepcopy(b), list(orig_s)
 
-    # добавляем x_j >= 0 как -x_j <= 0
-    for j in range(len(c)):
-        row = [0] * len(c)
-        row[j] = -1
-        A0.append(row); b0.append(0); s0.append('<=')
+    # # добавляем x_j >= 0 как -x_j <= 0
+    # for j in range(len(c)):
+    #     row = [0] * len(c)
+    #     row[j] = -1
+    #     A0.append(row); b0.append(0); s0.append('<=')
 
-    integer_indices = list(range(len(c)))
-    res = branch_and_bound(c, A0, b0, s0, integer_indices)
+    res = branch_and_bound(c, A0, b0, s0)
 
     if res is None:
         # Совсем не нашли решений
