@@ -149,5 +149,5 @@ def dual_simplex(c, A, b, senses=None):
 
     x = extract_solution(T, basis, n)
     obj = float(T[-1][-1])
-    alternative = any(T[-1][j] == 0 and j not in basis for j in range(n))
+    alternative = any(T[-1][j] == 0 and j not in basis for j in range(len(T[0])-1))
     return SimplexResult('optimal', x, obj, alternative, tableau=deepcopy(T), history=history)
