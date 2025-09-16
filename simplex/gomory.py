@@ -27,10 +27,6 @@ def gomory_integer(c_in, A_in, b_in, senses=None, max_cuts=10):
     if res.status != 'optimal':
         return res
 
-    # фиксируем initial_slack и original_m для дальнейших пересчётов
-    initial_slack = res.slack_count if res.slack_count is not None else (len(res.tableau[0]) - len(c) - 1)
-    orig_m = original_m
-
     cuts = 0
     def frac_part(fr: F) -> F:
         f = fr - F(int(fr))
