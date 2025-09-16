@@ -49,7 +49,7 @@ def main():
     tabs = st.tabs(["Калькулятор", "Инструкция"])
 
     with tabs[0]:
-        st.title("Симплекс метод")
+        st.title("Линейное и целочисленное программирование")
 
         method = st.selectbox(
             "Метод решения",
@@ -97,12 +97,21 @@ def main():
             b.append(rhs)
             senses.append(sense_std)
 
+        # Дополнительные параметры метода
+        gomory_max_cuts = None
+        if method == "Гомори":
+            gomory_max_cuts = st.number_input(
+                "Макс. число срезов (итераций Гомори)", min_value=1, max_value=500, value=50, step=1,
+                help="Ограничивает количество добавляемых резок Гомори."
+            )
+
         if st.button("Решить"):
             if method == "Симплекс":
                 # use dual simplex implementation
                 result = dual_simplex(obj_coeffs, A, b, senses)
             elif method == "Гомори":
-                result = gomory_integer(obj_coeffs, A, b, senses)
+                # Передаем max_cuts для нового Гомори
+                result = gomory_integer(obj_coeffs, A, b, senses, max_cuts=int(gomory_max_cuts) if gomory_max_cuts else 50)
             elif method == "Ветвей и границ":
                 result, _ = solve_integer(obj_coeffs, A, b, senses)
             else:
@@ -123,10 +132,16 @@ def main():
                 if getattr(result, "alternative", False):
                     st.info("Существует множество оптимальных решений")
             else:
-                st.error({
+                status = getattr(result, "status", None)
+                msg = {
                     'infeasible': "Задача несовместна (нет решений)",
                     'unbounded': "Задача неограничена (целевую функцию можно увеличивать неограниченно)",
-                }.get(getattr(result, "status", None), "Не удалось найти решение"))
+                    'max_iter_exceeded': "Достигнут предел числа срезов Гомори до нахождения целочисленного решения",
+                }.get(status, "Не удалось найти решение")
+                if status == 'max_iter_exceeded':
+                    st.warning(msg)
+                else:
+                    st.error(msg)
 
             if hasattr(result, "history") and result.history:
                 st.subheader("История итераций")

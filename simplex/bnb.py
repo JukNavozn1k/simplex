@@ -7,11 +7,9 @@ class BnBResult:
         self.status = status        # 'optimal' или 'infeasible'
         self.x = x or []
         self.objective = objective
-        # финальная симплекс-таблица и история итераций для LP на узле,
-        # где найдено целочисленное решение (если найдено)
         self.tableau = tableau
         self.history = history or []
-        # сохранённые ограничения (A, b, senses) для финального узла
+        
         self.final_constraints = final_constraints
 
 def branch_and_bound(c, A, b, senses, best=None, depth=0, max_depth=50, added_A=None, added_b=None, added_s=None):
@@ -33,8 +31,7 @@ def branch_and_bound(c, A, b, senses, best=None, depth=0, max_depth=50, added_A=
         if abs(x_relaxed[i] - round(x_relaxed[i])) > 1e-9:
             break
     else:
-        # целочисленное решение найдено на текущем LP-узле
-        # возвращаем только добавленные (ветвящие) ограничения, без исходных
+      
         return BnBResult(
             'optimal',
             [int(round(v)) for v in x_relaxed],
@@ -80,12 +77,6 @@ def solve_integer(c, A, b, senses=None):
     """
     orig_s = senses or ['<='] * len(A)
     A0, b0, s0 = deepcopy(A), deepcopy(b), list(orig_s)
-
-    # # добавляем x_j >= 0 как -x_j <= 0
-    # for j in range(len(c)):
-    #     row = [0] * len(c)
-    #     row[j] = -1
-    #     A0.append(row); b0.append(0); s0.append('<=')
 
     res = branch_and_bound(c, A0, b0, s0)
 
