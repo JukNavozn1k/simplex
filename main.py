@@ -145,6 +145,35 @@ def main():
                         }
                         st.dataframe(table_data)
 
+            # Для метода ветвей и границ дополнительно покажем финальные ограничения и финальную таблицу
+            # если они были проброшены из решателя
+            if method == "Ветвей и границ" and hasattr(result, "final_constraints") and result.final_constraints:
+                st.subheader("Итоговые ограничения (после ветвления)")
+                A_fin, b_fin, s_fin = result.final_constraints
+                for i, (row, rhs, sense) in enumerate(zip(A_fin, b_fin, s_fin)):
+                    lhs_str = " + ".join(
+                        [f"{coef:.4f}·x{j+1}" for j, coef in enumerate(row) if abs(coef) > 1e-12]
+                    ) or "0"
+                    sense_map_inv = {"<=": "≤", ">=": "≥", "==": "="}
+                    st.write(f"Огр. {i+1}: {lhs_str} {sense_map_inv.get(sense, sense)} {rhs:.4f}")
+
+                # финальная таблица (на последнем узле)
+                if getattr(result, "tableau", None):
+                    st.subheader("Финальная симплекс-таблица (B&B)")
+                    tab = result.tableau
+                    headers = [f"x{j+1}" for j in range(n_vars)]
+                    headers += [f"s{j+1}" for j in range(len(tab[0]) - n_vars - 1)]
+                    headers.append("b")
+                    index = [f"Огр. {j+1}" for j in range(len(tab)-1)]
+                    index.append("Z")
+                    formatted_tab = [[f"{float(x):.4f}" for x in row] for row in tab]
+                    table_data = {
+                        "": index,
+                        **{headers[j]: [row[j] for row in formatted_tab]
+                           for j in range(len(headers))}
+                    }
+                    st.dataframe(table_data)
+
     with tabs[1]:
         show_instructions()
 
