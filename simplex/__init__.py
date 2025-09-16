@@ -1,4 +1,4 @@
-from .base import simplex, SimplexResult
+from .dual import dual_simplex as simplex, SimplexResult
 from .bnb import solve_integer
 
 from .gomory import gomory_integer
