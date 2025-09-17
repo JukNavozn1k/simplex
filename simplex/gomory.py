@@ -2,172 +2,158 @@
 from copy import deepcopy
 from math import floor, isclose
 from fractions import Fraction as F
-from .dual import dual_simplex, SimplexResult, recover_basis_from_tableau
+from .dual import dual_simplex, SimplexResult
 
-def _find_gomory_cut_from_tableau(tableau, n, tol=1e-12):
+def _preprocess_constraints_local(A, b, senses):
     """
-    Попытаться построить классический дробный cut (Гомори) из tableau.
-    Возвращает (new_row_list_of_floats, new_rhs_float) в пространстве первых n переменных,
-        или None если подходящей строки нет.
-    Требование: есть строка с дробным RHS и хотя бы один дробный коэффициент
-                 среди первых n коэффициентов (иначе cut тривиален/противоречив).
+    Копия логики preprocess_constraints из dual.py, но возвращает также
+    mapping slack_pos -> row_index (для последующей подстановки).
+    Возвращает (A2, b2, s2, slack_row_for_pos)
     """
+    A2, b2, s2 = [], [], []
+    slack_row_for_pos = []
+    slack_counter = 0
+    for i, (row, rhs, sense) in enumerate(zip(A, b, senses)):
+        if sense == '<=':
+            A2.append(list(row))
+            b2.append(rhs)
+            s2.append('<=') 
+            slack_row_for_pos.append(len(A2) - 1)
+            slack_counter += 1
+        elif sense == '>=':
+            A2.append([-c for c in row])
+            b2.append(-rhs)
+            s2.append('<=') 
+            slack_row_for_pos.append(len(A2) - 1)
+            slack_counter += 1
+        elif sense == '==':
+            A2.append(list(row))
+            b2.append(rhs)
+            s2.append('<=') 
+            slack_row_for_pos.append(len(A2) - 1)
+            slack_counter += 1
+
+            A2.append([-c for c in row])
+            b2.append(-rhs)
+            s2.append('<=') 
+            slack_row_for_pos.append(len(A2) - 1)
+            slack_counter += 1
+        else:
+            raise ValueError(f"Unknown sense: {sense}")
+    return A2, b2, s2, slack_row_for_pos
+
+def _recover_basis_from_tableau(tableau):
+    """Восстановление базиса (unit-столбцы) — как в dual.recover..."""
+    if not tableau:
+        return []
     m = len(tableau) - 1
-    for i in range(m):
-        row = tableau[i]
-        rhs = F(row[-1])
-        frac_rhs = rhs - F(floor(rhs))
-        if frac_rhs <= F(tol):
-            continue  # RHS целый или численно очень близок к целому
+    cols = len(tableau[0]) - 1
+    basis = [None] * m
+    for j in range(cols):
+        one_row = None
+        is_unit = True
+        for i in range(m):
+            v = F(tableau[i][j])
+            if v == 1:
+                if one_row is None:
+                    one_row = i
+                else:
+                    is_unit = False
+                    break
+            elif v == 0:
+                continue
+            else:
+                is_unit = False
+                break
+        if is_unit and one_row is not None:
+            basis[one_row] = j
+    return basis
 
-        # вычислим дробные части первых n коэффициентов
-        frac_coeffs = []
-        any_frac = False
-        for j in range(n):
-            a = F(row[j])
-            fa = a - F(floor(a))
-            frac_coeffs.append(fa)
-            if fa > F(tol):
-                any_frac = True
-
-        if not any_frac:
-            # если все дробные части при исходных переменных нулевые — эта строка даст 0 >= frac_rhs (невозможно)
-            # пропускаем такую строку
-            continue
-
-        # cut: sum_j frac_coeffs[j] * x_j >= frac_rhs
-        # преобразуем в <=: -sum_j frac_coeffs[j] * x_j <= -frac_rhs
-        new_row_fracs = [ -frac_coeffs[j] for j in range(n) ]
-        new_rhs_frac = -frac_rhs
-        # вернём как float (build_tableau внутри dual сделает Fraction)
-        return ([float(v) for v in new_row_fracs], float(new_rhs_frac))
-
-    return None
-
-def gomory_integer_programming(c, A, b, senses=None, max_nodes=200, tol=1e-8):
+def gomory_integer_programming(c, A, b, senses=None, max_iter=50, tol=1e-8):
     """
-    Gomory + fallback branch-and-bound.
-    - Сначала пытаемcя строить корректные срезы Гомори.
-    - Если подходящий срез получить невозможно (например все дробности лежат в slack-столбцах),
-      используем ветвление по одной дробной переменной (две ветви).
-    Параметр max_nodes ограничивает число ветвлений/узлов (безопасность).
-    Возвращает SimplexResult: статус 'optimal' с целым решением если найдено,
-    или лучший найденный LP/статус, или 'max_nodes_exceeded'.
+    Чистая реализация метода Гомори (без branch-and-bound).
+    - Строит корректные cuts, подставляя вклад slack'ов в коэффициенты исходных переменных.
+    - Пропускает строки, приводящие к тривиальным/противоречивым cut'ам.
+    - Останавливается, когда найдено целое решение или достигнут max_iter резок.
     """
-    # начальные данные
-    root_A = deepcopy(A)
-    root_b = deepcopy(b)
-    root_senses = deepcopy(senses) if senses else ['<='] * len(A)
-
-    best_incumbent = None   # (x, obj)
-    nodes_explored = 0
-    last_lp_result = None
-
+    current_A = deepcopy(A)
+    current_b = deepcopy(b)
+    current_senses = deepcopy(senses) if senses else ['<='] * len(A)
+    iteration = 0
     n = len(c)
 
-    # стек узлов: каждый узел — (A, b, senses)
-    stack = [(root_A, root_b, root_senses)]
-
-    while stack:
-        if nodes_explored >= max_nodes:
-            break
-        current_A, current_b, current_senses = stack.pop()
-        nodes_explored += 1
-
+    while iteration < max_iter:
+        iteration += 1
         result = dual_simplex(c, current_A, current_b, current_senses)
-        last_lp_result = result
 
         if result.status != 'optimal':
-            # нет смысла ветвить дальше по этому узлу
-            continue
+            return SimplexResult(result.status, tableau=result.tableau, history=result.history)
 
         x = result.x
-        obj = result.objective
+        tableau = result.tableau
 
-        # отсечение: если уже есть incumbent лучше (для max), пропускаем
-        if best_incumbent is not None and obj <= best_incumbent[1] + 1e-12:
-            continue
-
-        # проверим целочисленность
-        all_int = True
+        # проверка целочисленности
         frac_idx = None
         for i, xi in enumerate(x):
             if not isclose(xi, round(xi), abs_tol=tol):
-                all_int = False
-                if frac_idx is None:
-                    frac_idx = i
+                frac_idx = i
+                break
+        if frac_idx is None:
+            return SimplexResult('optimal', x, result.objective, tableau=result.tableau, history=result.history)
 
-        if all_int:
-            # нашли целое решение — обновляем incumbent
-            best_incumbent = (x, obj, result.tableau, result.history)
-            # продолжаем — возможно найдётся лучшее
-            continue
+        # восстановим A2,b2,s2 и mapping slack_pos -> row_index
+        A2, b2, s2, slack_row_for_pos = _preprocess_constraints_local(current_A, current_b, current_senses)
+        slack_count = sum(1 for t in s2 if t in ('<=', '>='))
 
-        # попытка построить Гомори cut из tableau
-        tableau = result.tableau
-        cut = _find_gomory_cut_from_tableau(tableau, n, tol=tol)
+        m = len(tableau) - 1
+        cols = len(tableau[0]) - 1
 
-        if cut is not None:
-            new_row, new_rhs = cut
-            # добавляем cut и помещаем узел обратно (продолжаем углубление с добавленным cut)
-            A2 = deepcopy(current_A)
-            b2 = deepcopy(current_b)
-            s2 = deepcopy(current_senses)
-            A2.append(new_row)
-            b2.append(new_rhs)
-            s2.append('<=')   # мы уже перевели cut в <=
-            # ставим в стек сначала текущий узел с cut (DFS-like)
-            stack.append((A2, b2, s2))
-            continue
-        else:
-            # НЕТ корректного Гомори-cuta по текущей таблице (т.е. все дробности лежат вне первых n колонок)
-            # делаем ветвление по frac_idx (первая дробная переменная)
-            i = frac_idx
-            xi = x[i]
-            floor_val = floor(xi)
-            ceil_val = floor_val + 1
+        # Ищем подходящую строку: дробный RHS и при подстановке вклад в исходные переменные не нулевой
+        chosen_cut = None
+        for i in range(m):
+            row = tableau[i]
+            rhs = F(row[-1])
+            frac_rhs = rhs - F(floor(rhs))
+            if frac_rhs <= F(tol):
+                continue
 
-            # ветвь 1: x_i <= floor_val
-            row_le = [0.0] * n
-            row_le[i] = 1.0
-            A_le = deepcopy(current_A)
-            b_le = deepcopy(current_b)
-            s_le = deepcopy(current_senses)
-            A_le.append(row_le)
-            b_le.append(float(floor_val))
-            s_le.append('<=')
+            frac_cols = [F(row[j]) - F(floor(F(row[j]))) for j in range(cols)]
 
-            # ветвь 2: x_i >= ceil_val (оставляем как >= — preprocess в dual обработает)
-            row_ge = [0.0] * n
-            row_ge[i] = 1.0
-            A_ge = deepcopy(current_A)
-            b_ge = deepcopy(current_b)
-            s_ge = deepcopy(current_senses)
-            A_ge.append(row_ge)
-            b_ge.append(float(ceil_val))
-            s_ge.append('>=')  # dual.preprocess превратит в <= с инвертированными коэффициентами
+            # вычисляем coeffs по исходным переменным с учётом slack-подстановки
+            coeffs = [F(0)] * n
+            for j in range(n):
+                coeffs[j] = frac_cols[j]
 
-            # ставим в стек (сначала правая ветвь, затем левая — чтобы левая обрабатывалась первой)
-            stack.append((A_ge, b_ge, s_ge))
-            stack.append((A_le, b_le, s_le))
-            continue
+            for s_idx in range(slack_count):
+                frac_s = frac_cols[n + s_idx] if (n + s_idx) < len(frac_cols) else F(0)
+                if frac_s == 0:
+                    continue
+                slack_row = slack_row_for_pos[s_idx]
+                for j in range(n):
+                    coeffs[j] -= frac_s * F(A2[slack_row][j])
+                frac_rhs -= frac_s * F(b2[slack_row])
 
-    # конец поиска
-    if best_incumbent is not None:
-        x, obj, tableau, history = best_incumbent
-        return SimplexResult('optimal', x, obj, tableau=deepcopy(tableau), history=history)
-    else:
-        if nodes_explored >= max_nodes:
-            # вернуть лучший LP-результат, если он был
-            if last_lp_result is None:
-                return SimplexResult('max_nodes_exceeded', tableau=None, history=[])
-            return SimplexResult('max_nodes_exceeded', tableau=last_lp_result.tableau, history=last_lp_result.history)
-        # ни одной целой точки не найдено, вернуть последний LP-результат (возможно fractional)
-        return SimplexResult(last_lp_result.status, tableau=last_lp_result.tableau, history=last_lp_result.history)
+            any_coeff_nonzero = any(abs(float(cj)) > tol for cj in coeffs)
+            if not any_coeff_nonzero:
+                continue
+
+            # имеем рабочий cut: coeffs x >= frac_rhs
+            # преобразуем в <=: -coeffs x <= -frac_rhs (оставляем Fraction)
+            new_row = [-coeffs[j] for j in range(n)]
+            new_rhs = -frac_rhs
+            chosen_cut = (new_row, new_rhs, i, coeffs, frac_rhs)
+            break
+
+        if chosen_cut is None:
+            return SimplexResult('no_valid_gomory_cut', tableau=result.tableau, history=result.history)
+
+        # добавляем выбранный cut
+        new_row, new_rhs, row_idx, coeffs_frac, rhs_frac = chosen_cut
+        current_A.append(new_row)
+        current_b.append(new_rhs)
+        current_senses.append('<=') 
+
+    return SimplexResult('max_iter_exceeded', tableau=result.tableau, history=result.history)
 
 def gomory_integer(c, A, b, senses=None, max_cuts=50, tol=1e-8):
-    """
-    Обёртка совместимости.
-    max_cuts -> max_nodes в нашей реализации.
-    """
-    return gomory_integer_programming(c, A, b, senses=senses, max_nodes=max_cuts, tol=tol)
+    return gomory_integer_programming(c, A, b, senses=senses, max_iter=max_cuts, tol=tol)
