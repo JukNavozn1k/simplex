@@ -10,6 +10,44 @@ class SimplexResult:
         self.tableau = tableau
         self.history = history or []
 
+def recover_basis_from_tableau(tableau):
+    """
+    Восстановить basis из tableau.
+    Возвращает список length = m (число строк без строки Z), где
+    basis[i] = j, если столбец j является единичным в строке i (unit column),
+    иначе None.
+    Работает с типами, которые можно преобразовать в Fraction (F).
+    """
+    if not tableau:
+        return []
+
+    m = len(tableau) - 1            # число строк ограничений
+    cols = len(tableau[0]) - 1      # число столбцов без RHS
+    basis = [None] * m
+
+    for j in range(cols):
+        one_row = None
+        is_unit = True
+        for i in range(m):
+            v = F(tableau[i][j])
+            if v == 1:
+                if one_row is None:
+                    one_row = i
+                else:
+                    # встретили ещё одну единицу — не unit-столбец
+                    is_unit = False
+                    break
+            elif v == 0:
+                continue
+            else:
+                # ненулевая отличная от единицы — не unit-столбец
+                is_unit = False
+                break
+        if is_unit and one_row is not None:
+            basis[one_row] = j
+
+    return basis
+
 def pivot(tableau, basis, row, col):
     piv = tableau[row][col]
     tableau[row] = [v / piv for v in tableau[row]]
