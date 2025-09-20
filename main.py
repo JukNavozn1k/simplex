@@ -3,194 +3,156 @@ import streamlit as st
 from simplex import gomory_integer, solve_integer
 from simplex.dual import dual_simplex
 
-def show_instructions():
-    st.title("Инструкция по применению")
-    st.markdown("""
-    ### Как задать задачу
-
-    1. **Выберите тип задачи:**  
-       * Максимум — коэффициенты целевой функции используются как есть  
-       * Минимум — коэффициенты целевой функции автоматически домножаются на -1
-
-     2. **Выберите метод решения:**  
-         * Симплекс — классический симплекс-метод  
-         * Гомори — метод разрезов Гомори для поиска целочисленного решения
-         * Ветвей и границ — метод ветвей и границ для целочисленного программирования
-
-    3. **Ввод ограничений:**  
-       * Для каждого ограничения выберите знак: ≤, ≥ или =  
-       * Введите коэффициенты и правую часть для каждого ограничения  
-       * Шаг изменения коэффициентов и правых частей — 1
-
-    4. **Формат:**  
-       * Все переменные по умолчанию считаются неотрицательными (x₁ ≥ 0, x₂ ≥ 0, ...)
-
-    5. **Пример:**  
-       ```
-       min Z = 2x₁ + 3x₂
-       x₁ + x₂ ≥ 4
-       2x₁ + x₂ ≤ 10
-       ```
-       В интерфейсе выберите "Минимум", задайте коэффициенты целевой функции,  
-       для первого ограничения выберите знак ≥, для второго — ≤.
-
-    6. **Результаты:**  
-       * Для задачи на минимум итоговое значение целевой функции автоматически пересчитывается обратно.
-       * История итераций симплекс-метода доступна для просмотра.
-       * Для целочисленных методов (Гомори, Ветвей и границ) переменные в решении будут целыми числами.
-    """)
-
 
 def main():
     st.set_page_config(
         page_title="Симплекс калькулятор",
         page_icon="🧮",
     )
-    tabs = st.tabs(["Калькулятор", "Инструкция"])
+  
 
-    with tabs[0]:
-        st.title("Линейное и целочисленное программирование")
 
-        method = st.selectbox(
-            "Метод решения",
-            ["Симплекс", "Гомори", "Ветвей и границ"]
+    st.title("🧮 Симплекс калькулятор")
+
+    method = st.selectbox(
+        "Метод решения",
+        ["Симплекс", "Ветвей и границ", "Гомори"]
+    )
+
+    opt_type = st.radio("Тип задачи", ["Максимум", "Минимум"], horizontal=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        n_vars = st.number_input("Количество переменных", min_value=1, max_value=8, value=2, step=1)
+    with col2:
+        n_constraints = st.number_input("Количество ограничений", min_value=1, max_value=6, value=2, step=1)
+
+    st.subheader("Целевая функция")
+    obj_coeffs = []
+    cols = st.columns(int(n_vars))
+    for i in range(n_vars):
+        with cols[i]:
+            coef = st.number_input(f"x{i+1}", key=f"obj_{i}", step=1.0, format="%.6g")
+            obj_coeffs.append(coef)
+
+    if opt_type == "Минимум":
+        obj_coeffs = [-c for c in obj_coeffs]
+
+    st.subheader("Ограничения")
+    A = []
+    b = []
+    senses = []
+    for i in range(n_constraints):
+        st.write(f"Ограничение {i+1}")
+        row = []
+        cols = st.columns(n_vars + 2)
+        for j in range(n_vars):
+            with cols[j]:
+                coef = st.number_input(f"x{j+1}", key=f"cons_{i}_{j}", step=1.0, format="%.6g")
+                row.append(coef)
+        with cols[-2]:
+            sense = st.selectbox("Тип", options=["≤", "≥", "="], key=f"sense_{i}")
+            sense_map = {"≤": "<=", "≥": ">=", "=": "=="}
+            sense_std = sense_map[sense]
+        with cols[-1]:
+            rhs = st.number_input("Правая часть", key=f"rhs_{i}", step=1.0, format="%.6g")
+        A.append(row)
+        b.append(rhs)
+        senses.append(sense_std)
+
+    # Дополнительные параметры метода
+    gomory_max_cuts = None
+    if method == "Гомори":
+        gomory_max_cuts = st.number_input(
+            "Макс. число срезов (итераций Гомори)", min_value=1, max_value=500, value=50, step=1,
+            help="Ограничивает количество добавляемых резок Гомори."
         )
 
-        opt_type = st.radio("Тип задачи", ["Максимум", "Минимум"], horizontal=True)
+    if st.button("Решить"):
+        if method == "Симплекс":
+            # use dual simplex implementation
+            result = dual_simplex(obj_coeffs, A, b, senses)
+        elif method == "Гомори":
+            # Передаем max_cuts для нового Гомори
+            result = gomory_integer(obj_coeffs, A, b, senses, max_cuts=int(gomory_max_cuts) if gomory_max_cuts else 50)
+        elif method == "Ветвей и границ":
+            result, _ = solve_integer(obj_coeffs, A, b, senses)
+        else:
+            result = None
 
-        col1, col2 = st.columns(2)
-        with col1:
-            n_vars = st.number_input("Количество переменных", min_value=1, max_value=8, value=3, step=1)
-        with col2:
-            n_constraints = st.number_input("Количество ограничений", min_value=1, max_value=6, value=2, step=1)
+        st.subheader("Результаты")
 
-        st.subheader("Целевая функция")
-        obj_coeffs = []
-        cols = st.columns(int(n_vars))
-        for i in range(n_vars):
-            with cols[i]:
-                coef = st.number_input(f"x{i+1}", key=f"obj_{i}", step=1.0, format="%.6g")
-                obj_coeffs.append(coef)
-
-        if opt_type == "Минимум":
-            obj_coeffs = [-c for c in obj_coeffs]
-
-        st.subheader("Ограничения")
-        A = []
-        b = []
-        senses = []
-        for i in range(n_constraints):
-            st.write(f"Ограничение {i+1}")
-            row = []
-            cols = st.columns(n_vars + 2)
-            for j in range(n_vars):
-                with cols[j]:
-                    coef = st.number_input(f"x{j+1}", key=f"cons_{i}_{j}", step=1.0, format="%.6g")
-                    row.append(coef)
-            with cols[-2]:
-                sense = st.selectbox("Тип", options=["≤", "≥", "="], key=f"sense_{i}")
-                sense_map = {"≤": "<=", "≥": ">=", "=": "=="}
-                sense_std = sense_map[sense]
-            with cols[-1]:
-                rhs = st.number_input("Правая часть", key=f"rhs_{i}", step=1.0, format="%.6g")
-            A.append(row)
-            b.append(rhs)
-            senses.append(sense_std)
-
-        # Дополнительные параметры метода
-        gomory_max_cuts = None
-        if method == "Гомори":
-            gomory_max_cuts = st.number_input(
-                "Макс. число срезов (итераций Гомори)", min_value=1, max_value=500, value=50, step=1,
-                help="Ограничивает количество добавляемых резок Гомори."
-            )
-
-        if st.button("Решить"):
-            if method == "Симплекс":
-                # use dual simplex implementation
-                result = dual_simplex(obj_coeffs, A, b, senses)
-            elif method == "Гомори":
-                # Передаем max_cuts для нового Гомори
-                result = gomory_integer(obj_coeffs, A, b, senses, max_cuts=int(gomory_max_cuts) if gomory_max_cuts else 50)
-            elif method == "Ветвей и границ":
-                result, _ = solve_integer(obj_coeffs, A, b, senses)
+        if result is not None and result.status == 'optimal':
+            st.success("Найдено оптимальное решение!")
+            st.write("Значения переменных:")
+            for i, val in enumerate(result.x):
+                if abs(val) > 1e-8:
+                    st.write(f"x{i+1} = {val:.4f}")
+            if opt_type == "Минимум":
+                st.write(f"Оптимальное значение целевой функции: {-result.objective:.4f}")
             else:
-                result = None
-
-            st.subheader("Результаты")
-
-            if result is not None and result.status == 'optimal':
-                st.success("Найдено оптимальное решение!")
-                st.write("Значения переменных:")
-                for i, val in enumerate(result.x):
-                    if abs(val) > 1e-8:
-                        st.write(f"x{i+1} = {val:.4f}")
-                if opt_type == "Минимум":
-                    st.write(f"Оптимальное значение целевой функции: {-result.objective:.4f}")
-                else:
-                    st.write(f"Оптимальное значение целевой функции: {result.objective:.4f}")
-                if getattr(result, "alternative", False):
-                    st.info("Существует множество оптимальных решений")
+                st.write(f"Оптимальное значение целевой функции: {result.objective:.4f}")
+            if getattr(result, "alternative", False):
+                st.info("Существует множество оптимальных решений")
+        else:
+            status = getattr(result, "status", None)
+            msg = {
+                'infeasible': "Задача несовместна (нет решений)",
+                'unbounded': "Задача неограничена (целевую функцию можно увеличивать неограниченно)",
+                'max_iter_exceeded': "Достигнут предел числа срезов Гомори до нахождения целочисленного решения",
+            }.get(status, "Не удалось найти решение")
+            if status == 'max_iter_exceeded':
+                st.warning(msg)
             else:
-                status = getattr(result, "status", None)
-                msg = {
-                    'infeasible': "Задача несовместна (нет решений)",
-                    'unbounded': "Задача неограничена (целевую функцию можно увеличивать неограниченно)",
-                    'max_iter_exceeded': "Достигнут предел числа срезов Гомори до нахождения целочисленного решения",
-                }.get(status, "Не удалось найти решение")
-                if status == 'max_iter_exceeded':
-                    st.warning(msg)
-                else:
-                    st.error(msg)
+                st.error(msg)
 
-            if hasattr(result, "history") and result.history:
-                st.subheader("История итераций")
-                for i, tab in enumerate(result.history):
-                    with st.expander(f"Итерация {i}"):
-                        headers = [f"x{j+1}" for j in range(n_vars)]
-                        headers += [f"s{j+1}" for j in range(len(tab[0]) - n_vars - 1)]
-                        headers.append("b")
-                        index = [f"Огр. {j+1}" for j in range(len(tab)-1)]
-                        index.append("Z")
-                        formatted_tab = [[f"{x:.4f}" for x in row] for row in tab]
-                        table_data = {
-                            "": index,
-                            **{headers[j]: [row[j] for row in formatted_tab]
-                               for j in range(len(headers))}
-                        }
-                        st.dataframe(table_data)
-
-            # Для метода ветвей и границ дополнительно покажем финальные ограничения и финальную таблицу
-            # если они были проброшены из решателя
-            if method == "Ветвей и границ" and hasattr(result, "final_constraints") and result.final_constraints:
-                st.subheader("Итоговые ограничения (после ветвления)")
-                A_fin, b_fin, s_fin = result.final_constraints
-                for i, (row, rhs, sense) in enumerate(zip(A_fin, b_fin, s_fin)):
-                    lhs_str = " + ".join(
-                        [f"{coef:.4f}·x{j+1}" for j, coef in enumerate(row) if abs(coef) > 1e-12]
-                    ) or "0"
-                    sense_map_inv = {"<=": "≤", ">=": "≥", "==": "="}
-                    st.write(f"Огр. {i+1}: {lhs_str} {sense_map_inv.get(sense, sense)} {rhs:.4f}")
-
-                # финальная таблица (на последнем узле)
-                if getattr(result, "tableau", None):
-                    st.subheader("Финальная симплекс-таблица (B&B)")
-                    tab = result.tableau
+        if hasattr(result, "history") and result.history:
+            st.subheader("История итераций")
+            for i, tab in enumerate(result.history):
+                with st.expander(f"Итерация {i}"):
                     headers = [f"x{j+1}" for j in range(n_vars)]
                     headers += [f"s{j+1}" for j in range(len(tab[0]) - n_vars - 1)]
                     headers.append("b")
                     index = [f"Огр. {j+1}" for j in range(len(tab)-1)]
                     index.append("Z")
-                    formatted_tab = [[f"{float(x):.4f}" for x in row] for row in tab]
+                    formatted_tab = [[f"{x:.4f}" for x in row] for row in tab]
                     table_data = {
                         "": index,
                         **{headers[j]: [row[j] for row in formatted_tab]
-                           for j in range(len(headers))}
+                            for j in range(len(headers))}
                     }
                     st.dataframe(table_data)
 
-    with tabs[1]:
-        show_instructions()
+        # Для метода ветвей и границ дополнительно покажем финальные ограничения и финальную таблицу
+        # если они были проброшены из решателя
+        if method == "Ветвей и границ" and hasattr(result, "final_constraints") and result.final_constraints:
+            st.subheader("Итоговые ограничения (после ветвления)")
+            A_fin, b_fin, s_fin = result.final_constraints
+            for i, (row, rhs, sense) in enumerate(zip(A_fin, b_fin, s_fin)):
+                lhs_str = " + ".join(
+                    [f"{coef:.4f}·x{j+1}" for j, coef in enumerate(row) if abs(coef) > 1e-12]
+                ) or "0"
+                sense_map_inv = {"<=": "≤", ">=": "≥", "==": "="}
+                st.write(f"Огр. {i+1}: {lhs_str} {sense_map_inv.get(sense, sense)} {rhs:.4f}")
+
+            # финальная таблица (на последнем узле)
+            if getattr(result, "tableau", None):
+                st.subheader("Финальная симплекс-таблица (B&B)")
+                tab = result.tableau
+                headers = [f"x{j+1}" for j in range(n_vars)]
+                headers += [f"s{j+1}" for j in range(len(tab[0]) - n_vars - 1)]
+                headers.append("b")
+                index = [f"Огр. {j+1}" for j in range(len(tab)-1)]
+                index.append("Z")
+                formatted_tab = [[f"{float(x):.4f}" for x in row] for row in tab]
+                table_data = {
+                    "": index,
+                    **{headers[j]: [row[j] for row in formatted_tab]
+                        for j in range(len(headers))}
+                }
+                st.dataframe(table_data)
+
+   
 
 if __name__ == "__main__":
     main()
