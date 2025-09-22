@@ -113,20 +113,80 @@ def main():
 
         if hasattr(result, "history") and result.history:
             st.subheader("История итераций")
-            for i, tab in enumerate(result.history):
-                with st.expander(f"Итерация {i}"):
-                    headers = [f"x{j+1}" for j in range(n_vars)]
-                    headers += [f"s{j+1}" for j in range(len(tab[0]) - n_vars - 1)]
-                    headers.append("b")
-                    index = [f"Огр. {j+1}" for j in range(len(tab)-1)]
-                    index.append("Z")
-                    formatted_tab = [[f"{x:.4f}" for x in row] for row in tab]
-                    table_data = {
-                        "": index,
-                        **{headers[j]: [row[j] for row in formatted_tab]
-                            for j in range(len(headers))}
-                    }
-                    st.dataframe(table_data)
+
+            def render_tableau_generic(tab):
+                if not tab:
+                    return
+                headers = [f"x{j+1}" for j in range(n_vars)]
+                headers += [f"s{j+1}" for j in range(len(tab[0]) - n_vars - 1)]
+                headers.append("b")
+                index = [f"Огр. {j+1}" for j in range(len(tab)-1)]
+                index.append("Z")
+                formatted_tab = [[f"{float(x):.4f}" for x in row] for row in tab]
+                table_data = {
+                    "": index,
+                    **{headers[j]: [row[j] for row in formatted_tab]
+                        for j in range(len(headers))}
+                }
+                st.dataframe(table_data)
+
+            # Определяем формат истории: новая (список dict) или старая (список таблиц)
+            is_new_history = isinstance(result.history[0], dict)
+
+            if not is_new_history:
+                # Старый формат совместимости: массив таблиц
+                for i, tab in enumerate(result.history):
+                    with st.expander(f"Итерация {i}"):
+                        render_tableau_generic(tab)
+            else:
+                # Новый формат: массив записей-итераций
+                for iter_item in result.history:
+                    it_idx = iter_item.get('iteration', None)
+                    title = f"Итерация {it_idx}" if it_idx is not None else "Итерация"
+                    with st.expander(title):
+                        cons = iter_item.get('constraints', {})
+                        A_iter = cons.get('A', [])
+                        b_iter = cons.get('b', [])
+                        senses_iter = cons.get('senses', [])
+                        if A_iter and b_iter:
+                            st.caption("Ограничения на начало итерации:")
+                            try:
+                                for r, (Ai, bi, s) in enumerate(zip(A_iter, b_iter, senses_iter)):
+                                    sign_txt = {'<=': '≤', '>=': '≥'}.get(s, '=')
+                                    terms = []
+                                    for j, coef in enumerate(Ai):
+                                        try:
+                                            val = float(coef)
+                                        except Exception:
+                                            # если коэффициент не приводится к float, пропускаем его
+                                            continue
+                                        if abs(val) <= 1e-12:
+                                            continue
+                                        terms.append(f"{val:.4g}·x{j+1}" if abs(val) != 1 else f"x{j+1}")
+                                    left = " + ".join(terms) if terms else "0"
+                                    st.write(f"{left} {sign_txt} {float(bi):.4g}")
+                            except Exception:
+                                # На всякий случай, если типы неожиданные
+                                st.write({"A": A_iter, "b": b_iter, "senses": senses_iter})
+
+                        st.caption("Ход симплекс-оптимизации на итерации:")
+                        sh = iter_item.get('simplex_history', [])
+                        if sh:
+                            step_labels = [f"Шаг {j}" for j in range(len(sh))]
+                            step_tabs = st.tabs(step_labels)
+                            for j, t in enumerate(step_tabs):
+                                with t:
+                                    render_tableau_generic(sh[j])
+
+                        final_tab = iter_item.get('final_tableau')
+                        if final_tab:
+                            st.caption("Финальная таблица итерации:")
+                            render_tableau_generic(final_tab)
+
+                        cut_info = iter_item.get('cut_added')
+                        if cut_info:
+                            st.info("Добавлен срез Гомори на конец итерации")
+                            st.code(f"row: {cut_info.get('row')}\nrhs: {cut_info.get('rhs')}\nsource_row_index: {cut_info.get('source_row_index')}")
 
         # Сохраняем только дерево BnB в сессию (объект простого словаря), чтобы UI не пропадал при любом ререндере
         if method == "Ветвей и границ" and hasattr(result, "bnb_tree") and result.bnb_tree:
