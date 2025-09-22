@@ -128,34 +128,7 @@ def main():
             st.session_state["bnb_tree"] = result.bnb_tree
             st.session_state["bnb_tree_present"] = True
 
-        # Для метода ветвей и границ дополнительно покажем финальные ограничения и финальную таблицу
-        # если они были проброшены из решателя
-        if method == "Ветвей и границ" and hasattr(result, "final_constraints") and result.final_constraints:
-            st.subheader("Итоговые ограничения (после ветвления)")
-            A_fin, b_fin, s_fin = result.final_constraints
-            for i, (row, rhs, sense) in enumerate(zip(A_fin, b_fin, s_fin)):
-                lhs_str = " + ".join(
-                    [f"{coef:.4f}·x{j+1}" for j, coef in enumerate(row) if abs(coef) > 1e-12]
-                ) or "0"
-                sense_map_inv = {"<=": "≤", ">=": "≥", "==": "="}
-                st.write(f"Огр. {i+1}: {lhs_str} {sense_map_inv.get(sense, sense)} {rhs:.4f}")
-
-            # финальная таблица (на последнем узле)
-            if getattr(result, "tableau", None):
-                st.subheader("Финальная симплекс-таблица (B&B)")
-                tab = result.tableau
-                headers = [f"x{j+1}" for j in range(n_vars)]
-                headers += [f"s{j+1}" for j in range(len(tab[0]) - n_vars - 1)]
-                headers.append("b")
-                index = [f"Огр. {j+1}" for j in range(len(tab)-1)]
-                index.append("Z")
-                formatted_tab = [[f"{float(x):.4f}" for x in row] for row in tab]
-                table_data = {
-                    "": index,
-                    **{headers[j]: [row[j] for row in formatted_tab]
-                        for j in range(len(headers))}
-                }
-                st.dataframe(table_data)
+        # (удалено) В методе ветвей и границ не показываем финальные ограничения и финальную симплекс-таблицу
 
         # Дерево ветвей и границ (визуализация графом + панель деталей узла)
         # Берём дерево из текущего результата или из сессии
@@ -343,19 +316,7 @@ def main():
                 st.write("Базис:")
                 st.code("\n".join(rows))
 
-            # Панель деталей выбранного узла
-            id_to_node = {n['id']: n for n in nodes}
-            options = [(n['id'], n['label'].replace('\n', ' | ')) for n in nodes]
-            selected_id = st.selectbox(
-                "Выберите узел для деталей",
-                options=[oid for oid, _ in options],
-                format_func=lambda oid: dict(options)[oid],
-                key="bnb_node_select",
-            )
-            sel = id_to_node[selected_id]
-            st.markdown(f"**Детали узла:** {sel['label'].replace('\n', ' | ')}")
-            render_basis(sel.get('basis'), sel.get('tableau'))
-            render_tableau(sel.get('tableau'), caption="Симплекс-таблица узла")
+            # (удалено) Панель деталей узла для метода ветвей и границ
 
    
 
