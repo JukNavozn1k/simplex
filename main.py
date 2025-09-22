@@ -69,6 +69,11 @@ def main():
         )
 
     if st.button("Решить"):
+        # Сбрасываем сохранённое дерево BnB перед каждым новым запуском решения,
+        # чтобы не показывать граф от предыдущей задачи
+        if "bnb_tree" in st.session_state:
+            st.session_state.pop("bnb_tree", None)
+        st.session_state["bnb_tree_present"] = False
         if method == "Симплекс":
             # use dual simplex implementation
             result = dual_simplex(obj_coeffs, A, b, senses)
@@ -127,6 +132,10 @@ def main():
         if method == "Ветвей и границ" and hasattr(result, "bnb_tree") and result.bnb_tree:
             st.session_state["bnb_tree"] = result.bnb_tree
             st.session_state["bnb_tree_present"] = True
+        else:
+            # Если дерево не получено (другая методика или нет решения) — сбрасываем флаг,
+            # чтобы не отображать дерево от предыдущей задачи
+            st.session_state["bnb_tree_present"] = False
 
         # (удалено) В методе ветвей и границ не показываем финальные ограничения и финальную симплекс-таблицу
 
