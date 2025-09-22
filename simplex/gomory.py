@@ -2,7 +2,7 @@
 from copy import deepcopy
 from math import floor, isclose
 from fractions import Fraction as F
-from .dual import dual_simplex, SimplexResult
+from .dual import dual_simplex, SimplexResult,build_tableau
 
 def _preprocess_constraints_local(A, b, senses):
     """
@@ -70,24 +70,21 @@ def _recover_basis_from_tableau(tableau):
     return basis
 
 def gomory_integer_programming(c, A, b, senses=None, max_iter=50, tol=1e-8):
-    """
-    Чистая реализация метода Гомори (без branch-and-bound).
-    - Строит корректные cuts, подставляя вклад slack'ов в коэффициенты исходных переменных.
-    - Пропускает строки, приводящие к тривиальным/противоречивым cut'ам.
-    - Останавливается, когда найдено целое решение или достигнут max_iter резок.
-    """
     current_A = deepcopy(A)
     current_b = deepcopy(b)
     current_senses = deepcopy(senses) if senses else ['<='] * len(A)
     iteration = 0
     n = len(c)
+    history = []
 
     while iteration < max_iter:
         iteration += 1
+        history.append(deepcopy(build_tableau(c, current_A, current_b, current_senses)[0]))
         result = dual_simplex(c, current_A, current_b, current_senses)
 
         if result.status != 'optimal':
-            return SimplexResult(result.status, tableau=result.tableau, history=result.history)
+            history.append(deepcopy(result.tableau))
+            return SimplexResult(result.status, tableau=result.tableau, history=history)
 
         x = result.x
         tableau = result.tableau
@@ -99,7 +96,8 @@ def gomory_integer_programming(c, A, b, senses=None, max_iter=50, tol=1e-8):
                 frac_idx = i
                 break
         if frac_idx is None:
-            return SimplexResult('optimal', x, result.objective, tableau=result.tableau, history=result.history)
+            history.append(deepcopy(result.tableau))
+            return SimplexResult('optimal', x, result.objective, tableau=result.tableau, history=history)
 
         # восстановим A2,b2,s2 и mapping slack_pos -> row_index
         A2, b2, s2, slack_row_for_pos = _preprocess_constraints_local(current_A, current_b, current_senses)
@@ -145,7 +143,8 @@ def gomory_integer_programming(c, A, b, senses=None, max_iter=50, tol=1e-8):
             break
 
         if chosen_cut is None:
-            return SimplexResult('no_valid_gomory_cut', tableau=result.tableau, history=result.history)
+            history.append(deepcopy(result.tableau))
+            return SimplexResult('no_valid_gomory_cut', tableau=result.tableau, history=history)
 
         # добавляем выбранный cut
         new_row, new_rhs, row_idx, coeffs_frac, rhs_frac = chosen_cut
@@ -153,7 +152,7 @@ def gomory_integer_programming(c, A, b, senses=None, max_iter=50, tol=1e-8):
         current_b.append(new_rhs)
         current_senses.append('<=') 
 
-    return SimplexResult('max_iter_exceeded', tableau=result.tableau, history=result.history)
+    return SimplexResult('max_iter_exceeded', tableau=result.tableau, history=history)
 
 def gomory_integer(c, A, b, senses=None, max_cuts=50, tol=1e-8):
     return gomory_integer_programming(c, A, b, senses=senses, max_iter=max_cuts, tol=tol)
