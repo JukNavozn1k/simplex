@@ -294,6 +294,7 @@ def main():
                 var = node.get('var')
                 bound = node.get('bound')
                 obj = node.get('lp_objective')
+                status = node.get('status') or '-'  # добавляем статус узла
                 # Текст ветвления: для LE — x_k ≤ bound; для GE — x_k ≥ bound; для root — '-'
                 if node_type == 'LE' and var is not None and bound is not None:
                     branch_txt = f"x{var+1} ≤ {bound}"
@@ -313,7 +314,7 @@ def main():
                 else:
                     vals_str = ""
                 # Многострочная подпись узла
-                return f"{node_type}\n{branch_txt}\nz={ztxt}\n{vals_str}"
+                return f"{node_type} [{status}]\n{branch_txt}\nz={ztxt}\n{vals_str}"
 
             nodes = []  # list of dicts: {id, label, tableau, basis}
             edges = []  # list of (parent_id, child_id, branch_label)
@@ -336,6 +337,35 @@ def main():
 
             traverse(tree_to_show, "root")
 
+            # Определяем наличие альтернативных целочисленных оптимумов
+            # Листовой узел с status == 'optimal' и заданным lp_objective считается целочисленным решением
+            alternative_bnb = False
+            if 'result' in locals() and result is not None and getattr(result, 'status', None) == 'optimal' and result.objective is not None:
+                best_val = float(result.objective)
+                tol = 1e-9
+
+                def is_leaf(n):
+                    return (n is not None) and (not n.get('left')) and (not n.get('right'))
+
+                def count_best_leaves(n):
+                    if not n:
+                        return 0
+                    cnt = 0
+                    if is_leaf(n) and n.get('status') == 'optimal' and n.get('lp_objective') is not None:
+                        try:
+                            if abs(float(n['lp_objective']) - best_val) <= tol:
+                                cnt += 1
+                        except Exception:
+                            pass
+                    if n.get('left'):
+                        cnt += count_best_leaves(n['left'])
+                    if n.get('right'):
+                        cnt += count_best_leaves(n['right'])
+                    return cnt
+
+                if count_best_leaves(tree_to_show) >= 2:
+                    alternative_bnb = True
+
             # Рисуем граф DOT
             dot_lines = [
                 'digraph G {',
@@ -352,6 +382,10 @@ def main():
             cols_graph = st.columns([1, 2, 1])
             with cols_graph[1]:
                 st.graphviz_chart("\n".join(dot_lines))
+
+            # Сообщение о наличии альтернативных решений в BnB
+            if alternative_bnb:
+                st.info("В методе ветвей и границ существуют альтернативные оптимальные решения (несколько листьев с одинаковым Z)")
 
             # Вспомогательные функции для отображения таблицы и базиса
             def render_tableau(tab, caption=None):
