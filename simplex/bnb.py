@@ -26,12 +26,35 @@ def branch_and_bound(c, A, b, senses, best=None, depth=0, max_depth=50, added_A=
 
     # решаем LP для текущего узла
     lp = simplex(c, A, b, senses)
+
+    # Инициализация корня/обновление текущего узла независимо от статуса LP
+    if tree_root is None:
+        tree_root = {
+            'type': 'root',
+            'depth': depth,
+            'var': None,
+            'bound': None,
+            'lp_objective': lp.objective if lp.status == 'optimal' else None,
+            'tableau': deepcopy(lp.tableau),
+            'basis': recover_basis_from_tableau(lp.tableau) if lp.tableau else [],
+            'left': None,
+            'right': None,
+            'status': lp.status,
+        }
+        current_node = tree_root
+    else:
+        if current_node is not None:
+            current_node['lp_objective'] = lp.objective if lp.status == 'optimal' else None
+            current_node['tableau'] = deepcopy(lp.tableau)
+            current_node['basis'] = recover_basis_from_tableau(lp.tableau) if lp.tableau else []
+            current_node['status'] = lp.status
+
     if lp.status != 'optimal':
-        # узел несовместен — просто возвращаем best, сохраняя дерево
+        # Узел несовместен или неограничен — возвращаем текущий best, но дерево уже создано
         if best is not None:
             best.tree = tree_root
             return best
-        return None
+        return BnBResult(lp.status, tree=tree_root)
 
     x_relaxed, obj_relaxed = lp.x, lp.objective
     if best is not None and obj_relaxed <= best.objective:
@@ -69,26 +92,7 @@ def branch_and_bound(c, A, b, senses, best=None, depth=0, max_depth=50, added_A=
     if added_A is None:
         added_A, added_b, added_s = [], [], []
 
-    # Инициализируем дерево, если это корень
-    if tree_root is None:
-        tree_root = {
-            'type': 'root',
-            'depth': depth,
-            'var': None,
-            'bound': None,
-            'lp_objective': obj_relaxed,
-            'tableau': deepcopy(lp.tableau),
-            'basis': recover_basis_from_tableau(lp.tableau),
-            'left': None,
-            'right': None,
-        }
-        current_node = tree_root
-    else:
-        # Обновляем информацию в текущем узле после решения LP
-        if current_node is not None:
-            current_node['lp_objective'] = obj_relaxed
-            current_node['tableau'] = deepcopy(lp.tableau)
-            current_node['basis'] = recover_basis_from_tableau(lp.tableau)
+    # К этому моменту дерево уже инициализировано выше и узел обновлён
 
     # LE-ветвь:  x_i <= floor(xi)
     A1, b1, s1 = deepcopy(A), deepcopy(b), list(senses)
@@ -153,19 +157,14 @@ def solve_integer(c, A, b, senses=None):
     res = branch_and_bound(c, A0, b0, s0)
 
     if res is None:
-        # Совсем не нашли решений
-        return SimplexResult('infeasible'), None
-    elif res.status == 'optimal':
-        # Пробрасываем финальную таблицу и историю в результат, чтобы UI мог их показать
-        out = SimplexResult('optimal', res.x, res.objective, tableau=res.tableau, history=None)
-        # Дополнительно прикладываем финальные ограничения узла (для возможного отображения)
-        out.final_constraints = res.final_constraints
-        # Пробрасываем дерево ветвлений для UI
-        out.bnb_tree = res.tree
-        return out, res.x
-    else:
-        # на всякий случай, если появятся другие статусы
-        out = SimplexResult(res.status, res.x, res.objective, tableau=res.tableau, history=None)
-        out.final_constraints = res.final_constraints
-        return out, res.x
+        # На всякий случай; сейчас branch_and_bound всегда возвращает BnBResult
+        out = SimplexResult('infeasible')
+        out.bnb_tree = None
+        return out, None
+
+    # Формируем единый SimplexResult для любых статусов, обязательно прикладывая дерево
+    out = SimplexResult(res.status, res.x, res.objective, tableau=res.tableau, history=None)
+    out.final_constraints = res.final_constraints
+    out.bnb_tree = res.tree
+    return out, res.x
 
