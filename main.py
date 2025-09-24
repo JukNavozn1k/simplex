@@ -387,6 +387,54 @@ def main():
             if alternative_bnb:
                 st.info("В методе ветвей и границ существуют альтернативные оптимальные решения")
 
+                # Собираем сами альтернативные решения: листовые узлы со статусом optimal
+                best_val = float(result.objective)
+                tol = 1e-9
+
+                def is_leaf(n):
+                    return (n is not None) and (not n.get('left')) and (not n.get('right'))
+
+                def extract_x_from_node(n):
+                    pairs = variable_values_from_node(n)
+                    x = [0.0] * n_vars
+                    name_to_val = {name: val for name, val in pairs}
+                    for j in range(n_vars):
+                        v = name_to_val.get(f"x{j+1}")
+                        if v is not None:
+                            x[j] = float(v)
+                    return x
+
+                solutions = []
+                seen = set()
+
+                def dfs_collect(n):
+                    if not n:
+                        return
+                    if is_leaf(n) and n.get('status') == 'optimal' and n.get('lp_objective') is not None:
+                        try:
+                            if abs(float(n['lp_objective']) - best_val) <= tol:
+                                x_vec = extract_x_from_node(n)
+                                key = tuple(int(round(v)) for v in x_vec)
+                                if key not in seen:
+                                    seen.add(key)
+                                    solutions.append({
+                                        'x': [int(round(v)) for v in x_vec],
+                                        'objective': float(n['lp_objective'])
+                                    })
+                        except Exception:
+                            pass
+                    if n.get('left'):
+                        dfs_collect(n['left'])
+                    if n.get('right'):
+                        dfs_collect(n['right'])
+
+                dfs_collect(tree_to_show)
+
+                if solutions:
+                    st.write("Альтернативные оптимальные решения (целочисленные):")
+                    for idx, sol in enumerate(solutions, start=1):
+                        st.code(f"Решение {idx}: x = {sol['x']}, Z = {sol['objective']:.6g}")
+
             # Вспомогательные функции для отображения таблицы и базиса
             def render_tableau(tab, caption=None):
                 if not tab:
