@@ -1,13 +1,20 @@
 from copy import deepcopy
 from fractions import Fraction as F
 import math  # Not strictly needed, but for clarity if using math.floor
-from dual import SimplexResult, bland_rule_dual, recover_basis_from_tableau, find_entering_variable_dual, pivot, dual_simplex, extract_solution
+from .dual import (
+    SimplexResult,
+    bland_rule_dual,
+    recover_basis_from_tableau,
+    find_entering_variable_dual,
+    pivot,
+    dual_simplex,
+    extract_solution,
+)
+
 # Existing classes and functions assumed to be defined as provided...
 # (SimplexResult, recover_basis_from_tableau, pivot, bland_rule_dual, 
 # find_entering_variable_dual, preprocess_constraints, build_tableau, 
 # extract_solution, dual_simplex)
-
-# Helper functions for Gomory
 def floor_frac(f: F) -> F:
     """Floor of a Fraction."""
     return F(f.numerator // f.denominator)

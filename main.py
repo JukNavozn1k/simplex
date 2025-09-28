@@ -1,7 +1,8 @@
 import streamlit as st
 
-from simplex import gomory_integer, solve_integer
+from simplex import solve_integer
 from simplex.dual import dual_simplex
+from simplex.gomory import gomory_simplex
 
 
 def main():
@@ -61,12 +62,7 @@ def main():
         senses.append(sense_std)
 
     # Дополнительные параметры метода
-    gomory_max_cuts = None
-    if method == "Гомори":
-        gomory_max_cuts = st.number_input(
-            "Макс. число срезов (итераций Гомори)", min_value=1, max_value=500, value=50, step=1,
-            help="Ограничивает количество добавляемых резок Гомори."
-        )
+    # (Для обновлённого метода Гомори дополнительные параметры не требуются)
 
     if st.button("Решить"):
         # Сбрасываем сохранённое дерево BnB перед каждым новым запуском решения,
@@ -78,8 +74,8 @@ def main():
             # use dual simplex implementation
             result = dual_simplex(obj_coeffs, A, b, senses)
         elif method == "Гомори":
-            # Передаем max_cuts для нового Гомори
-            result = gomory_integer(obj_coeffs, A, b, senses, max_cuts=int(gomory_max_cuts) if gomory_max_cuts else 50)
+            # Новый метод Гомори без параметра max_cuts
+            result = gomory_simplex(obj_coeffs, A, b, senses)
         elif method == "Ветвей и границ":
             result, _ = solve_integer(obj_coeffs, A, b, senses)
         else:
@@ -134,10 +130,82 @@ def main():
             is_new_history = isinstance(result.history[0], dict)
 
             if not is_new_history:
-                # Старый формат совместимости: массив таблиц
-                for i, tab in enumerate(result.history):
-                    with st.expander(f"Итерация {i}"):
-                        render_tableau_generic(tab)
+                # Старый формат: history = [tableau0, tableau1, ...]
+                # Разобьём историю на фазы: новая фаза начинается, когда число ограничений (строк без Z)
+                # увеличивается — это соответствует добавлению нового ограничения/среза.
+                def count_constraints(tab):
+                    return max(0, len(tab) - 1) if tab else 0
+
+                def format_constraint_from_row(row):
+                    # Форматирует ограничение как линейную комбинацию по x-переменным = rhs
+                    try:
+                        rhs_val = float(row[-1])
+                    except Exception:
+                        rhs_val = row[-1]
+                    terms = []
+                    for j in range(min(n_vars, len(row) - 1)):
+                        try:
+                            val = float(row[j])
+                        except Exception:
+                            continue
+                        if abs(val) <= 1e-12:
+                            continue
+                        coef_txt = f"{abs(val):.4g}" if abs(val) != 1 else ""
+                        sign = "+" if val >= 0 else "-"
+                        if not terms:
+                            # первый термин — без ведущего плюса
+                            head = "" if val >= 0 else "- "
+                            terms.append(f"{head}{coef_txt}·x{j+1}".replace("  ", " ").replace("·", "·"))
+                        else:
+                            terms.append(f" {sign} {coef_txt}·x{j+1}".replace("  ", " ").replace("·", "·"))
+                    left = "".join(terms) if terms else "0"
+                    return f"{left} = {rhs_val:.4g}" if isinstance(rhs_val, (int, float)) else f"{left} = {rhs_val}"
+
+                phases = []  # list of lists of tableaus
+                current_phase = []
+                prev_cons = None
+                for tab in result.history:
+                    cons = count_constraints(tab)
+                    if prev_cons is None:
+                        # первая запись
+                        current_phase.append(tab)
+                        prev_cons = cons
+                        continue
+                    if cons > prev_cons:
+                        # началась новая фаза после добавления ограничения
+                        if current_phase:
+                            phases.append(current_phase)
+                        current_phase = [tab]
+                    else:
+                        current_phase.append(tab)
+                    prev_cons = cons
+                if current_phase:
+                    phases.append(current_phase)
+
+                # Отрисовка фаз
+                if phases:
+                    # Первая фаза: оптимизация текущей задачи — в раскрывающемся блоке, табы «Шаг i»
+                    with st.expander("Оптимизация текущей задачи", expanded=False):
+                        step_labels = [f"Шаг {i}" for i in range(len(phases[0]))]
+                        step_tabs = st.tabs(step_labels)
+                        for i, t in enumerate(step_tabs):
+                            with t:
+                                render_tableau_generic(phases[0][i])
+
+                    # Последующие фазы (после добавления ограничений) в отдельных раскрывающихся секциях
+                    for k, phase in enumerate(phases[1:], start=1):
+                        with st.expander(f"После добавления ограничения {k}"):
+                            # Попробуем вывести явный вид добавленного ограничения исходя из первой таблицы фазы
+                            if phase and phase[0] and len(phase[0]) >= 2:
+                                # Новая строка была вставлена непосредственно перед Z при добавлении
+                                new_row = phase[0][-2]
+                                st.caption("Добавленное ограничение (по x-переменным, в таблице):")
+                                st.code(format_constraint_from_row(new_row))
+                            step_labels2 = [f"Шаг {i}" for i in range(len(phase))]
+                            step_tabs2 = st.tabs(step_labels2)
+                            for i, t in enumerate(step_tabs2):
+                                with t:
+                                    render_tableau_generic(phase[i])
             else:
                 # Новый формат: массив записей-итераций
                 for iter_item in result.history:
