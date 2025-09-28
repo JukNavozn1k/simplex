@@ -1,7 +1,7 @@
 from copy import deepcopy
 from fractions import Fraction as F
 import math  # Not strictly needed, but for clarity if using math.floor
-from dual import *
+from dual import SimplexResult, bland_rule_dual, recover_basis_from_tableau, find_entering_variable_dual, pivot, dual_simplex, extract_solution
 # Existing classes and functions assumed to be defined as provided...
 # (SimplexResult, recover_basis_from_tableau, pivot, bland_rule_dual, 
 # find_entering_variable_dual, preprocess_constraints, build_tableau, 
@@ -141,14 +141,15 @@ def gomory_simplex(c, A, b, senses=None):
 
 if __name__ == "__main__":
     # Пример использования
-    c = [1,1]
+    c = [11,5, 4]
     A = [
-        [1,1],
-        [1.5, 1],
+        [3,2,8],
+        [2,0,1],
+        [3,3,1]
        
     ]
-    b = [0.8, 0.2]
-    senses = ['<=', '>=']
+    b = [11,5,13]
+    senses = ['==', '<=', '<=']
 
     result = gomory_simplex(c, A, b, senses)
     print("Status:", result.status)
